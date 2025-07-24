@@ -63,12 +63,6 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>FirebaseAppDelegateProxyEnabled</key>
-	<false/>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>com.googleusercontent.apps.27576664803-rpkc9r4cs216hqfrli28s3vo0kqukuca</string>
-	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>This app requires camera access to capture photos to process and give you the best results on your highlighted text.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

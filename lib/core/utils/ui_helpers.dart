@@ -36,22 +36,6 @@ class UIHelpers {
     ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
 
-  // Color helpers for gender-based styling
-  static Color getGenderBackgroundColor(String? gender) {
-    switch (gender) {
-      case AppConstants.maleGender:
-        return Colors.black;
-      case AppConstants.femaleGender:
-        return Colors.pink;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  static Color getGenderTextColor(String? gender) {
-    return Colors.white; // All genders use white text
-  }
-
   // Common loading indicator
   static Widget loadingIndicator() {
     return const Center(

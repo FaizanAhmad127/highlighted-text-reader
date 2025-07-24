@@ -73,11 +73,11 @@ class _OnboardingPageState extends State<OnboardingPage> {
       ];
 
   void _onDone() {
-    context.go(AppConstants.phoneAuthRoute);
+    context.go(AppConstants.homeRoute);
   }
 
   void _onSkip() {
-    context.go(AppConstants.phoneAuthRoute);
+    context.go(AppConstants.homeRoute);
   }
 
   @override

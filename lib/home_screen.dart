@@ -1,14 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:openai_dart/openai_dart.dart' as openai;
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'secrets/secrets.dart';
 
 // Clean Architecture imports
@@ -16,10 +14,6 @@ import 'core/constants/app_constants.dart';
 import 'core/utils/ui_helpers.dart';
 import 'domain/entities/highlight.dart';
 import 'data/models/highlight_model.dart';
-import 'data/datasources/firestore_datasource.dart';
-import 'data/repositories/user_repository_impl.dart';
-import 'domain/usecases/user/get_user_stream.dart';
-import 'domain/usecases/user/update_tokens_used.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,10 +23,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Dependencies - should be injected via DI in production
-  late final GetUserStreamUseCase _getUserStreamUseCase;
-  late final UpdateTokensUsedUseCase _updateTokensUsedUseCase;
-
   // OpenAI client
   late openai.OpenAIClient client;
 
@@ -51,22 +41,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeDependencies();
     _setupConnectivityListener();
-    _setupUserStreamListener();
-  }
-
-  void _initializeDependencies() {
-    // Initialize data sources
-    final firestore = FirebaseFirestore.instance;
-    final firestoreDataSource = FirestoreDataSource(firestore);
-
-    // Initialize repositories
-    final userRepository = UserRepositoryImpl(firestoreDataSource);
-
-    // Initialize use cases
-    _getUserStreamUseCase = GetUserStreamUseCase(userRepository);
-    _updateTokensUsedUseCase = UpdateTokensUsedUseCase(userRepository);
+    _initializeOpenAIClient();
   }
 
   void _setupConnectivityListener() {
@@ -77,30 +53,6 @@ class _HomeScreenState extends State<HomeScreen> {
         dismissDialog();
       }
     });
-  }
-
-  void _setupUserStreamListener() {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser != null) {
-      _getUserStreamUseCase(currentUser.uid).listen((userData) {
-        if (mounted && userData != null) {
-          setState(() {
-            tokenUsed = userData.tokensUsed;
-            if (tokenUsed >= 20) {
-              isGoToBuyTokenScreenVisible = true;
-            }
-            _initializeOpenAIClient();
-          });
-        }
-      });
-    }
-  }
-
-  void _logout() async {
-    await FirebaseAuth.instance.signOut();
-    if (mounted) {
-      context.go(AppConstants.phoneAuthRoute);
-    }
   }
 
   Future<void> _initializeOpenAIClient() async {
@@ -326,13 +278,9 @@ class _HomeScreenState extends State<HomeScreen> {
         );
 
         if (!isUserUsingOwnApiKey) {
-          final currentUser = FirebaseAuth.instance.currentUser;
-          if (currentUser != null) {
-            if (kDebugMode) {
-              print("Increasing token for uid: ${currentUser.uid}");
-            }
-            await _updateTokensUsedUseCase(currentUser.uid, 1);
-          }
+          print("Increasing token");
+
+          // todo: increase token
         }
       }
     } catch (e) {
@@ -360,12 +308,6 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: Text(AppConstants.appName),
         backgroundColor: Colors.lightBlueAccent,
-        actions: [
-          TextButton(
-            onPressed: _logout,
-            child: const Text('Logout', style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.start,

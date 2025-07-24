@@ -27,6 +27,7 @@ lib/
 │       └── user/
 │           ├── create_user.dart
 │           ├── get_user_stream.dart
+│           ├── get_user_by_id.dart
 │           └── update_tokens_used.dart
 │
 ├── data/                          # Data Layer
