@@ -11,7 +11,6 @@ class AppConstants {
   static const String homeRoute = '/home';
   static const String buyTokenRoute = '/buy-token';
   static const String onboardRoute = '/on-board';
-  static const String rootRoute = '/';
 
   // Onboarding Assets
   static const String onboard1Asset = 'assets/onboard1.png';

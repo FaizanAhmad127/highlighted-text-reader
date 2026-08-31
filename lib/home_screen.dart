@@ -9,7 +9,6 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'secrets/secrets.dart';
 
-// Clean Architecture imports
 import 'core/constants/app_constants.dart';
 import 'core/utils/ui_helpers.dart';
 import 'domain/entities/highlight.dart';
@@ -42,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _setupConnectivityListener();
-    _initializeOpenAIClient();
+    _loadTokensFromPrefs();
   }
 
   void _setupConnectivityListener() {
@@ -278,9 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
 
         if (!isUserUsingOwnApiKey) {
-          print("Increasing token");
-
-          // todo: increase token
+          _increaseTokenCount();
         }
       }
     } catch (e) {
@@ -296,6 +293,24 @@ class _HomeScreenState extends State<HomeScreen> {
         print("Error parsing JSON: $e");
       }
     }
+  }
+
+  Future<void> _loadTokensFromPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      tokenUsed = prefs.getInt('tokensUsed') ?? 0;
+      if (tokenUsed >= 20) isGoToBuyTokenScreenVisible = true;
+    });
+    _initializeOpenAIClient();
+  }
+
+  Future<void> _increaseTokenCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      tokenUsed += 1;
+      if (tokenUsed >= 20) isGoToBuyTokenScreenVisible = true;
+    });
+    await prefs.setInt('tokensUsed', tokenUsed);
   }
 
   @override

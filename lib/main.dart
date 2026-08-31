@@ -16,6 +16,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final GoRouter router = GoRouter(
+      initialLocation: AppConstants.onboardRoute,
       routes: [
         GoRoute(
           path: AppConstants.onboardRoute,
@@ -25,10 +26,6 @@ class MyApp extends StatelessWidget {
           path: AppConstants.homeRoute,
           builder: (context, state) => const HomeScreen(),
         ),
-        // GoRoute(
-        //   path: AppConstants.phoneAuthRoute,
-        //   builder: (context, state) => PhoneAuthScreen(),
-        // ),
         GoRoute(
           path: AppConstants.buyTokenRoute,
           builder: (context, state) => const BuyTokenPage(),
