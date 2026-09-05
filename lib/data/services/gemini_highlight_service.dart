@@ -1,4 +1,5 @@
 import 'package:firebase_ai/firebase_ai.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../domain/entities/highlight.dart';
@@ -56,6 +57,14 @@ class GeminiHighlightService {
         InlineDataPart(image.mimeType, image.bytes),
       ]),
     ]);
+    if (kDebugMode) {
+      final usage = response.usageMetadata;
+      debugPrint(
+        'Gemini usageMetadata: prompt=${usage?.promptTokenCount}, '
+        'candidates=${usage?.candidatesTokenCount}, '
+        'thoughts=${usage?.thoughtsTokenCount}',
+      );
+    }
     return GeminiHighlightParser.parse(response.text);
   }
 }
