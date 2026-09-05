@@ -13,11 +13,6 @@ class AppConstants {
   static const String onboard2Asset = 'assets/onboard2.png';
   static const String onboard3Asset = 'assets/onboard3.jpg';
 
-  /// Shown when definitions could not be loaded yet (offline or lookup failed).
-  static const String meaningPendingPlaceholder =
-      'Connect to the internet for definitions.';
-  static const String meaningUnavailablePlaceholder = 'Meaning unavailable.';
-
   static const String geminiModelId = 'gemini-3.5-flash-lite';
   static const int maxImageEdgePx = 1536;
   static const int jpegQuality = 70;
