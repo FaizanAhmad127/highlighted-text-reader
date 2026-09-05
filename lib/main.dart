@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'core/constants/app_constants.dart';
-import 'presentation/pages/onboarding/onboarding_page.dart';
-import 'home_screen.dart';
-import 'presentation/pages/buy_token/buy_token_page.dart';
 
-void main() async {
+import 'core/constants/app_constants.dart';
+import 'core/firebase/firebase_bootstrap.dart';
+import 'home_screen.dart';
+import 'presentation/pages/onboarding/onboarding_page.dart';
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+  await FirebaseBootstrap.initialize();
+
+  FirebaseBootstrap.runGuarded(() {
+    runApp(const MyApp());
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -15,8 +20,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final analyticsObserver = FirebaseBootstrap.analyticsObserver;
     final GoRouter router = GoRouter(
       initialLocation: AppConstants.onboardRoute,
+      observers: analyticsObserver == null ? [] : [analyticsObserver],
       routes: [
         GoRoute(
           path: AppConstants.onboardRoute,
@@ -25,10 +32,6 @@ class MyApp extends StatelessWidget {
         GoRoute(
           path: AppConstants.homeRoute,
           builder: (context, state) => const HomeScreen(),
-        ),
-        GoRoute(
-          path: AppConstants.buyTokenRoute,
-          builder: (context, state) => const BuyTokenPage(),
         ),
       ],
     );

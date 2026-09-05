@@ -1,18 +1,19 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
-import 'package:connectivity_plus/connectivity_plus.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:openai_dart/openai_dart.dart' as openai;
-import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'secrets/secrets.dart';
 
 import 'core/constants/app_constants.dart';
+import 'core/firebase/app_analytics.dart';
+import 'core/firebase/app_crashlytics.dart';
+import 'core/utils/connectivity_helper.dart';
 import 'core/utils/ui_helpers.dart';
+import 'data/services/text_processing_pipeline.dart';
 import 'domain/entities/highlight.dart';
-import 'data/models/highlight_model.dart';
+import 'presentation/widgets/highlight/expandable_highlight_card.dart';
+import 'presentation/widgets/home/image_capture_section.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,295 +23,268 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // OpenAI client
-  late openai.OpenAIClient client;
+  final TextProcessingPipeline _pipeline = TextProcessingPipeline();
+  final ImagePicker _picker = ImagePicker();
 
-  // State variables
-  bool isDialogOpen = false;
   File? _image;
-  String? base64Image;
-  String? text;
   HighlightResponse? highlightResponse;
-  int tokenUsed = 0;
-  bool isUserUsingOwnApiKey = false;
-  String? apiKey;
-  bool isGoToBuyTokenScreenVisible = false;
   bool isFetchingMeaning = false;
+  String? _status;
+  bool _offline = false;
+  bool _skipNextConnectivityEvent = true;
+  bool _isRefreshingMeanings = false;
+  int? _expandedHighlightIndex;
 
   @override
   void initState() {
     super.initState();
+    _refreshConnectivity(silent: true);
     _setupConnectivityListener();
-    _loadTokensFromPrefs();
+  }
+
+  Future<void> _refreshConnectivity({required bool silent}) async {
+    final online = await ConnectivityHelper.hasConnection();
+    if (!mounted) return;
+    setState(() => _offline = !online);
+    if (!silent && !online) {
+      unawaited(AppAnalytics.logConnectivityChanged(offline: true));
+      UIHelpers.showSnackbar(
+        context,
+        'You are offline. Highlighted text can still be read; definitions need internet.',
+      );
+    }
   }
 
   void _setupConnectivityListener() {
-    Connectivity().onConnectivityChanged.listen((results) {
-      if (results.contains(ConnectivityResult.none)) {
-        showNoInternetDialog();
-      } else {
-        dismissDialog();
+    ConnectivityHelper.onConnectivityChanged.listen((results) {
+      if (!mounted) return;
+
+      // The first stream event often fires right after navigation; ignore it.
+      if (_skipNextConnectivityEvent) {
+        _skipNextConnectivityEvent = false;
+        setState(() => _offline = ConnectivityHelper.isOffline(results));
+        return;
+      }
+
+      final nowOffline = ConnectivityHelper.isOffline(results);
+      final wasOffline = _offline;
+      setState(() => _offline = nowOffline);
+
+      if (nowOffline && !wasOffline) {
+        unawaited(AppAnalytics.logConnectivityChanged(offline: true));
+        UIHelpers.showSnackbar(
+          context,
+          'You are offline. Highlighted text can still be read; definitions need internet.',
+        );
+      } else if (!nowOffline && wasOffline) {
+        unawaited(AppAnalytics.logConnectivityChanged(offline: false));
+        unawaited(_refreshPendingMeanings());
       }
     });
   }
 
-  Future<void> _initializeOpenAIClient() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+  Future<void> _refreshPendingMeanings() async {
+    if (_isRefreshingMeanings || isFetchingMeaning) return;
 
-    if (tokenUsed < 20) {
-      apiKey = Secrets.openAIProjectApiKey;
-      await prefs.remove('openai_api_key');
-    } else {
-      apiKey = prefs.getString('openai_api_key');
-      if (apiKey == null) {
-        return;
-      } else {
-        isUserUsingOwnApiKey = true;
-      }
-    }
-    client = openai.OpenAIClient(apiKey: apiKey);
-  }
-
-  void showNoInternetDialog() {
-    if (!isDialogOpen) {
-      isDialogOpen = true;
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          title: Text('No Internet'),
-          content: Text('Please check your internet connection.'),
-          actions: [],
-        ),
-      );
-    }
-  }
-
-  void dismissDialog() {
-    if (isDialogOpen) {
-      isDialogOpen = false;
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-  }
-
-  Future<void> setApiKey(String apiKey) async {
-    if (kDebugMode) {
-      print("New api key is: $apiKey");
-    }
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    prefs.setString('openai_api_key', apiKey);
-    _initializeOpenAIClient();
-  }
-
-  Future<void> _pickImage(ImageSource source) async {
-    if (kDebugMode) {
-      print("=================== $apiKey");
-    }
-
-    if (tokenUsed >= 20 && !isUserUsingOwnApiKey) {
-      final result = await context.push(AppConstants.buyTokenRoute);
-      if (result != null && result is List && result.isNotEmpty) {
-        String apiKey = result[0];
-        setApiKey(apiKey);
-      }
+    final highlights = highlightResponse?.highlights;
+    if (highlights == null ||
+        highlights.isEmpty ||
+        !TextProcessingPipeline.hasPendingMeanings(highlights)) {
       return;
     }
 
-    final picker = ImagePicker();
+    final online = await ConnectivityHelper.hasConnection();
+    if (!online || !mounted) return;
+
+    UIHelpers.showSnackbar(
+      context,
+      'Connection restored — loading definitions. No need to upload the image again.',
+      icon: Icons.wifi,
+      backgroundColor: Colors.green.shade700,
+    );
+
+    setState(() => _isRefreshingMeanings = true);
+
+    try {
+      final updated = await _pipeline.refreshMeanings(highlights);
+      if (!mounted) return;
+
+      final updatedHighlights = updated.highlights ?? [];
+      final stillPending =
+          TextProcessingPipeline.hasPendingMeanings(updatedHighlights);
+
+      setState(() {
+        highlightResponse = highlightResponse?.copyWith(
+          highlights: updatedHighlights,
+        );
+        _isRefreshingMeanings = false;
+        _offline = false;
+      });
+
+      if (!mounted) return;
+
+      if (!stillPending) {
+        UIHelpers.showSnackbar(
+          context,
+          'Definitions loaded.',
+          icon: Icons.check_circle_outline,
+          backgroundColor: Colors.green.shade700,
+        );
+      } else if (_pipeline.hadNetworkLookupFailure &&
+          !TextProcessingPipeline.hasAnyLoadedDefinition(updatedHighlights)) {
+        UIHelpers.showSnackbar(
+          context,
+          'Definitions could not be loaded. Check your internet connection.',
+        );
+      }
+    } catch (e, st) {
+      await AppCrashlytics.recordNonFatal(
+        e,
+        st,
+        reason: 'meaning_refresh',
+      );
+      if (!mounted) return;
+      setState(() => _isRefreshingMeanings = false);
+      UIHelpers.showSnackbar(
+        context,
+        'Could not load definitions. We will retry when you are back online.',
+      );
+    }
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    final sourceName = source == ImageSource.camera ? 'camera' : 'gallery';
+    unawaited(AppAnalytics.logImageSelected(source: sourceName));
+    await AppCrashlytics.log('Image pick started: $sourceName');
+
     setState(() {
       highlightResponse = null;
+      _expandedHighlightIndex = null;
+      _status = 'Loading image';
     });
 
-    UIHelpers.showSnackbar(context, 'Loading image');
-    final pickedFile = await picker.pickImage(source: source);
+    final pickedFile = await _picker.pickImage(source: source);
 
-    if (pickedFile != null) {
-      setState(() {
-        _image = File(pickedFile.path);
-      });
-      _fileToBase64(_image!);
-    } else {
-      UIHelpers.showSnackbar(context, 'No image selected, Try again');
+    if (pickedFile == null) {
+      setState(() => _status = null);
+      if (!mounted) return;
+      UIHelpers.showSnackbar(context, 'No image selected, try again');
+      return;
     }
-  }
 
-  Future _fileToBase64(File file) async {
-    UIHelpers.showSnackbar(context, 'Converting image to base64');
-    final bytes = await file.readAsBytes();
-    base64Image = 'data:image/png;base64,${base64Encode(bytes)}';
-    if (base64Image != null) {
-      _processImage();
-    } else {
-      UIHelpers.showSnackbar(context, 'Error converting image to base64');
-    }
-  }
-
-  void _processImage() async {
     setState(() {
+      _image = File(pickedFile.path);
       isFetchingMeaning = true;
     });
-    UIHelpers.showSnackbar(context, 'Processing image, please wait');
+    unawaited(AppAnalytics.logScanStarted(offline: _offline));
+    await _processImage();
+  }
+
+  Future<void> _processImage() async {
+    final image = _image;
+    if (image == null) return;
+
+    final online = await ConnectivityHelper.hasConnection();
+    if (!mounted) return;
+    setState(() => _offline = !online);
+
+    setState(() => isFetchingMeaning = true);
+    await AppCrashlytics.setCustomKeys({
+      'offline': _offline,
+      'lookup_meanings': online,
+    });
+    await AppCrashlytics.log('Image processing started');
 
     try {
-      final res = await client.createChatCompletion(
-        request: openai.CreateChatCompletionRequest(
-          model: openai.ChatCompletionModel.model(
-            openai.ChatCompletionModels.gpt4o,
-          ),
-          messages: [
-            openai.ChatCompletionMessage.system(
-              content: 'You are a helpful english professor.',
-            ),
-            openai.ChatCompletionMessage.user(
-              content: openai.ChatCompletionUserMessageContent.parts(
-                [
-                  openai.ChatCompletionMessageContentPart.text(
-                    text: '''Retrieve the highlighted text from this image.
-                  Make sure that the highlighted text is entirely in an image, if not then
-                  ignore that highlighted text and continue with other highlighted text.
-                  If the image is blur and distorted then also return false for 'found' key.
-                  Only give me a json object in result.
-                  Json should look like this in which found is used whether any
-                  highlighted text is found or not in whole image. Also if the image doesn't
-                  have any text at all then also return false.
+      final result = await _pipeline.process(
+        image,
+        lookupMeanings: online,
+        onStatus: (status) {
+          if (!mounted) return;
+          setState(() => _status = status);
+        },
+      );
 
-                  the key 'color' should have the color of the highlighted text in form of hex and
-                  hex code should look like this 0xFF6200EE and should be a string value wrapped by double quotes.
-
-                  Given a background color which has a key 'color' in hex format, recommend an appropriate text color
-                  which has a key 'textColor'
-                  from the opposite side of the color spectrum. For dark backgrounds
-                  like dark blue (#00008B), dark red (#8B0000), or dark black (#000000),
-                  suggest light shades of white, ensuring good contrast. If the background is light,
-                  suggest a darker text color for optimal readability,
-                  Provide the hex code of the suggested text color and should be
-                  a string value wrapped by double quotes.
-
-                  the key 'text' should have the highlighted text.
-
-                  the key 'literal' should give the literal meaning of that text, and same language as of 'text' and 
-                  should be a string value wrapped by double quotes.
-                 
-                 they key 'contextual' should give the contextual meaning of that text by analyzing
-                  either the whole passage or current paragraph or current sentence and if the image isn't cover the whole book page or 
-                  passage then analyze the surrounding text, and same language as of 'text', and should be a string value wrapped by double quotes.
-                  Json object should look like this
-                  {
-                    "found": true,
-                    "highlights": [
-                       {
-                          "text": "abc",
-                          "color": "0xFF6200EE",
-                          "textColor": "0xFF6200EE",
-                          "literal": "The love is dkafkfa",
-                          "contextual": "Love is defined..."
-                        }
-                      ]
-                  }
-
-                  Make sure to validate your answer by checking the key value pair, text shouldn't be empty,
-                  color should be in hex format, textColor should be opposite of color and in hex format,
-                  literal and contextual should not be empty. And the json object should be valid json object.
-                  ''',
-                  ),
-                  openai.ChatCompletionMessageContentPart.image(
-                    imageUrl: openai.ChatCompletionMessageImageUrl(
-                      url: base64Image!,
-                      detail: openai.ChatCompletionMessageImageDetail.auto,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+      if (!mounted) return;
+      final highlightCount = result.highlights?.length ?? 0;
+      final found = result.found == true && highlightCount > 0;
+      unawaited(
+        AppAnalytics.logScanCompleted(
+          found: found,
+          highlightCount: highlightCount,
+          offline: _offline,
+          dictionaryPartialFailure: _pipeline.hadNetworkLookupFailure,
         ),
       );
-
-      if (kDebugMode) {
-        print(res.choices.first.message.content!);
-      }
-      parseResponse(res.choices.first.message.content!);
-    } catch (e) {
-      setState(() {
-        isFetchingMeaning = false;
+      await AppCrashlytics.setCustomKeys({
+        'highlight_count': highlightCount,
+        'scan_found': found,
       });
-      UIHelpers.showSnackbar(
-        context,
-        'Error processing image. If you are using your own API key, please check if it is valid and also has balance in it. Go to Set API screen to set your own',
-        durationSeconds: 7,
-      );
-      if (kDebugMode) {
-        print("Error processing image: $e");
-      }
-    }
-  }
+      await AppCrashlytics.log('Image processing finished');
 
-  Future parseResponse(String response) async {
-    String cleanJson =
-        response.replaceAll("```json", "").replaceAll("```", "").trim();
+      setState(() {
+        highlightResponse = result;
+        isFetchingMeaning = false;
+        _status = null;
+        _expandedHighlightIndex = null;
+      });
 
-    try {
-      Map<String, dynamic> jsonMap = json.decode(cleanJson);
-      final highlightResponseModel = HighlightResponseModel.fromMap(jsonMap);
-      highlightResponse = highlightResponseModel.toEntity();
+      if (!mounted) return;
 
-      if (kDebugMode) {
-        print("Parsed Data: ${highlightResponseModel.toJson()}");
-      }
-
-      if (highlightResponse?.found == false) {
-        setState(() {
-          isFetchingMeaning = false;
-        });
+      if (result.found != true || (result.highlights?.isEmpty ?? true)) {
         UIHelpers.showSnackbar(
           context,
-          'Something went wrong. Make sure to take a picture of book page with highlighted text on it. Or if the image is blur or of very small size trying another image. Please try again',
-          durationSeconds: 7,
+          'No highlighted text found. Use a sharp photo of a book page with highlighter marks.',
+        );
+      } else if (_offline) {
+        UIHelpers.showSnackbar(
+          context,
+          'Highlighted text found. Definitions will load automatically when you are back online.',
+        );
+      } else if (_pipeline.hadNetworkLookupFailure &&
+          !TextProcessingPipeline.hasAnyLoadedDefinition(
+            result.highlights ?? [],
+          )) {
+        if (kDebugMode) {
+          print('Dictionary lookup issue: ${_pipeline.lastMeaningError}');
+        }
+        UIHelpers.showSnackbar(
+          context,
+          'Definitions could not be loaded. Check your internet connection.',
         );
       } else {
-        setState(() {
-          isFetchingMeaning = false;
-        });
         UIHelpers.showSnackbar(
           context,
-          'Enjoy the highlighted text. If you didn\'t get the desired result try high resolution image',
+          'Enjoy the highlighted text. If the result looks off, try a higher-resolution photo.',
         );
-
-        if (!isUserUsingOwnApiKey) {
-          _increaseTokenCount();
-        }
       }
-    } catch (e) {
-      setState(() {
-        isFetchingMeaning = false;
-      });
-      UIHelpers.showSnackbar(
-        context,
-        'Something went wrong. Make sure to take a picture of book page with highlighted text on it. Or if the image is blur or of very small size trying another image. Please try again',
-        durationSeconds: 7,
+    } on UnsupportedError catch (e, st) {
+      await AppCrashlytics.recordNonFatal(
+        e,
+        st,
+        reason: 'unsupported_device',
       );
+      unawaited(AppAnalytics.logScanFailed(reason: 'unsupported_device'));
+      _fail(e.message ?? 'This feature is not supported on this device.');
+    } catch (e, st) {
+      await AppCrashlytics.recordNonFatal(e, st, reason: 'image_processing');
+      unawaited(AppAnalytics.logScanFailed(reason: 'image_processing'));
       if (kDebugMode) {
-        print("Error parsing JSON: $e");
+        print('Error processing image: $e\n$st');
       }
+      _fail(
+        'Could not process the image. Try a clear photo of a book page with highlighted text.',
+      );
     }
   }
 
-  Future<void> _loadTokensFromPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
+  void _fail(String message) {
+    if (!mounted) return;
     setState(() {
-      tokenUsed = prefs.getInt('tokensUsed') ?? 0;
-      if (tokenUsed >= 20) isGoToBuyTokenScreenVisible = true;
+      isFetchingMeaning = false;
+      _status = null;
     });
-    _initializeOpenAIClient();
-  }
-
-  Future<void> _increaseTokenCount() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      tokenUsed += 1;
-      if (tokenUsed >= 20) isGoToBuyTokenScreenVisible = true;
-    });
-    await prefs.setInt('tokensUsed', tokenUsed);
+    UIHelpers.showSnackbar(context, message);
   }
 
   @override
@@ -322,7 +296,9 @@ class _HomeScreenState extends State<HomeScreen> {
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: Text(AppConstants.appName),
-        backgroundColor: Colors.lightBlueAccent,
+        centerTitle: false,
+        elevation: 0,
+        scrolledUnderElevation: 1,
       ),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.start,
@@ -330,153 +306,93 @@ class _HomeScreenState extends State<HomeScreen> {
           Expanded(
             child: Column(
               children: [
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text("Tokens remaining: ${20 - tokenUsed}"),
-                      if (isGoToBuyTokenScreenVisible)
-                        TextButton(
-                          onPressed: () async {
-                            final result =
-                                await context.push(AppConstants.buyTokenRoute);
-                            if (result != null &&
-                                result is List &&
-                                result.isNotEmpty) {
-                              String apiKey = result[0];
-                              await setApiKey(apiKey);
-                            }
-                          },
-                          child: const Text(
-                            "Set API",
-                            style: TextStyle(fontSize: 14),
-                          ),
-                        ),
-                    ],
-                  ),
+                ImageCaptureSection(
+                  image: _image,
+                  isProcessing: isFetchingMeaning,
+                  status: _status,
+                  offline: _offline,
+                  compact: found,
+                  onGallery: () => _pickImage(ImageSource.gallery),
+                  onCamera: () => _pickImage(ImageSource.camera),
                 ),
-                const SizedBox(height: 10),
-                if (_image != null)
+                const SizedBox(height: 12),
+                if (found)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(context).size.height * 0.35,
-                        maxWidth: MediaQuery.of(context).size.width,
-                      ),
-                      child: InteractiveViewer(
-                        child: Image.file(
-                          _image!,
-                          fit: BoxFit.fitWidth,
-                        ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${highlights.length} highlight${highlights.length == 1 ? '' : 's'} — tap to see meaning',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
                       ),
                     ),
                   ),
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () => _pickImage(ImageSource.gallery),
-                        child: const Text('Pick Image'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () => _pickImage(ImageSource.camera),
-                        child: const Text('Take Picture'),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                if (found)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                if (found) const SizedBox(height: 8),
+                if (_isRefreshingMeanings)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        Text(
-                          "Text",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
-                        Text(
-                          "Literal",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          "Contextual",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Connection restored — loading definitions…',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                const SizedBox(height: 10),
                 Expanded(
                   child: isFetchingMeaning
                       ? UIHelpers.loadingIndicator()
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      : ListView.separated(
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            0,
+                            16,
+                            MediaQuery.paddingOf(context).bottom + 24,
+                          ),
                           itemCount: highlights.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
                           itemBuilder: (context, index) {
                             final highlight = highlights[index];
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 16.0),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Container(
-                                      padding: const EdgeInsets.only(
-                                        right: 2.0,
-                                        left: 8,
-                                        top: 8,
-                                        bottom: 8,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Color(
-                                          int.tryParse(highlight.color) ??
-                                              0xFFFFFFFF,
-                                        ),
-                                        borderRadius: const BorderRadius.only(
-                                          topRight: Radius.circular(8),
-                                          bottomRight: Radius.circular(8),
-                                        ),
-                                      ),
-                                      child: SelectableText(
-                                        highlight.text,
-                                        style: TextStyle(
-                                          color: Color(
-                                            int.tryParse(highlight.textColor) ??
-                                                0xFF000000,
-                                          ),
-                                        ),
-                                      ),
+                            return ExpandableHighlightCard(
+                              highlight: highlight,
+                              expanded: _expandedHighlightIndex == index,
+                              onTap: () {
+                                final expanding =
+                                    _expandedHighlightIndex != index;
+                                setState(() {
+                                  _expandedHighlightIndex =
+                                      _expandedHighlightIndex == index
+                                          ? null
+                                          : index;
+                                });
+                                if (expanding) {
+                                  unawaited(
+                                    AppAnalytics.logHighlightExpanded(
+                                      index: index,
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: SelectableText(highlight.literal),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: SelectableText(highlight.contextual),
-                                  ),
-                                ],
-                              ),
+                                  );
+                                }
+                              },
                             );
                           },
                         ),
@@ -490,89 +406,4 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// class BuyToken extends StatefulWidget {
-//   const BuyToken({super.key});
 
-//   @override
-//   State<BuyToken> createState() => _BuyTokenState();
-// }
-
-// class _BuyTokenState extends State<BuyToken> {
-//   final TextEditingController apiKeyController = TextEditingController();
-
-//   Future<void> _launchURL(String url) async {
-//     if (await canLaunch(url)) {
-//       await launch(url);
-//     } else {
-//       throw 'Could not launch $url';
-//     }
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: const Text('Set API Key'),
-//       ),
-//       body: Padding(
-//         padding: const EdgeInsets.symmetric(horizontal: 20),
-//         child: SingleChildScrollView(
-//           child: Column(
-//             spacing: 20,
-//             children: [
-//               const Text(
-//                 "You have reached 20 token limit. Please use your own OpenAI API key",
-//                 style: TextStyle(
-//                   fontSize: 18,
-//                   fontWeight: FontWeight.w600,
-//                 ),
-//               ),
-//               TextButton(
-//                 onPressed: () {
-//                   _launchURL(
-//                     'https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key',
-//                   );
-//                 },
-//                 child: const Text(
-//                   'Click on the link and get your own API key: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key',
-//                 ),
-//               ),
-//               TextButton(
-//                 onPressed: () {
-//                   _launchURL(
-//                     'https://help.openai.com/en/articles/8264644-how-can-i-set-up-prepaid-billing',
-//                   );
-//                 },
-//                 child: const Text(
-//                   'Note: Remember to add balance to your project after enabling API key. 1 USD would be enough for 50-100 images. Click on this guide: https://help.openai.com/en/articles/8264644-how-can-i-set-up-prepaid-billing',
-//                 ),
-//               ),
-//               const Text(
-//                 'Note: We don\'t store your API key. Your API key will be stored in your phone cache.',
-//               ),
-//               TextField(
-//                 controller: apiKeyController,
-//                 decoration: const InputDecoration(
-//                   hintText: 'Enter your OpenAI API key',
-//                   border: OutlineInputBorder(),
-//                 ),
-//               ),
-//               ElevatedButton(
-//                 onPressed: () {
-//                   if (apiKeyController.text.isNotEmpty) {
-//                     context.pop([apiKeyController.text]);
-//                   } else {
-//                     ScaffoldMessenger.of(context).showSnackBar(
-//                       const SnackBar(content: Text('Please enter API key')),
-//                     );
-//                   }
-//                 },
-//                 child: const Text('Set API Key'),
-//               ),
-//             ],
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }

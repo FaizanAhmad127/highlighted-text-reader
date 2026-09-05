@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:introduction_screen/introduction_screen.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/firebase/app_analytics.dart';
 import '../../../core/utils/ui_helpers.dart';
 
 class OnboardingPage extends StatefulWidget {
@@ -55,7 +58,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
         PageViewModel(
           title: "Now wait while we process the image",
           bodyWidget: const Text(
-            " - If the image is blur or of low resolution you might need to take the picture again.\n- If there is no highlighted text then you won't get any result.\n- If everything is fine, you will get the literal and contextual meaning of the highlighted text/phrases.",
+            " - If the image is blur or of low resolution you might need to take the picture again.\n- If there is no highlighted text then you won't get any result.\n- If everything is fine, you will get the literal meaning of the highlighted text/phrases.",
             textAlign: TextAlign.justify,
             style: UIHelpers.bodyTextStyle,
           ),
@@ -73,10 +76,12 @@ class _OnboardingPageState extends State<OnboardingPage> {
       ];
 
   void _onDone() {
+    unawaited(AppAnalytics.logOnboardingFinished(method: 'done'));
     context.go(AppConstants.homeRoute);
   }
 
   void _onSkip() {
+    unawaited(AppAnalytics.logOnboardingFinished(method: 'skip'));
     context.go(AppConstants.homeRoute);
   }
 

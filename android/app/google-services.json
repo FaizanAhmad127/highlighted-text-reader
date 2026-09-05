@@ -1,0 +1,70 @@
+{
+  "project_info": {
+    "project_number": "27576664803",
+    "project_id": "highlighted-text-reader",
+    "storage_bucket": "highlighted-text-reader.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:27576664803:android:38ee7ca8f836f724ed3bd6",
+        "android_client_info": {
+          "package_name": "com.faizan.highlightedtextreader"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "27576664803-b91d3f9ua293ok67m37j2unb67cidfiu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.faizan.highlightedtextreader",
+            "certificate_hash": "c621934aff01c3fb4c0919bd410dc29035f785dc"
+          }
+        },
+        {
+          "client_id": "27576664803-l2js75q1lmm5au7bagfbtqbamnf5vtnt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.faizan.highlightedtextreader",
+            "certificate_hash": "38babb9ca632024cfa17ffea3dd90e7c07c91f28"
+          }
+        },
+        {
+          "client_id": "27576664803-sv156g0ai9e9iasa461lsr3j0j3ea996.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.faizan.highlightedtextreader",
+            "certificate_hash": "20ae0bd2e7f4603a19f55703f647c1f8d24de21a"
+          }
+        },
+        {
+          "client_id": "27576664803-l0lf39dth5kkhq2eq9opo9285ipal685.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDvaiZoskmSjhTMs6Xq3dxwPHfH0jo9x9w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "27576664803-l0lf39dth5kkhq2eq9opo9285ipal685.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "27576664803-rpkc9r4cs216hqfrli28s3vo0kqukuca.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.faizan.highlightedtextreader"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -20,20 +20,15 @@ class UIHelpers {
         ],
       ),
       backgroundColor: backgroundColor,
-      behavior: SnackBarBehavior.floating,
+      behavior: SnackBarBehavior.fixed,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
       ),
-      action: SnackBarAction(
-        label: 'Dismiss',
-        textColor: Colors.white,
-        onPressed: () {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        },
-      ),
     );
 
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(snackBar);
   }
 
   // Common loading indicator
