@@ -52,12 +52,21 @@ class FirebaseBootstrap {
     _analytics = FirebaseAnalytics.instance;
     _crashlytics = FirebaseCrashlytics.instance;
 
-    await FirebaseAppCheck.instance.activate(
-      androidProvider:
-          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-      appleProvider:
-          kDebugMode ? AppleProvider.debug : AppleProvider.deviceCheck,
-    );
+    try {
+      await FirebaseAppCheck.instance.activate(
+        providerAndroid: kDebugMode
+            ? const AndroidDebugProvider()
+            : const AndroidPlayIntegrityProvider(),
+        providerApple: kDebugMode
+            ? const AppleDebugProvider()
+            : const AppleDeviceCheckProvider(),
+      );
+    } catch (e, st) {
+      if (kDebugMode) {
+        print('Firebase App Check activation failed: $e\n$st');
+      }
+      await _crashlytics?.recordError(e, st, fatal: false);
+    }
 
     try {
       if (FirebaseAuth.instance.currentUser == null) {

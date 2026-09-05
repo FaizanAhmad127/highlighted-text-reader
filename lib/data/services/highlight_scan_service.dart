@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import '../../domain/entities/highlight.dart';
@@ -18,11 +19,16 @@ class HighlightScanService {
   HighlightScanService({
     PageImageCompressor? compressor,
     GeminiHighlightService? gemini,
+    Duration geminiTimeout = defaultGeminiTimeout,
   })  : _compressor = compressor ?? const PageImageCompressor(),
-        _gemini = gemini ?? GeminiHighlightService();
+        _gemini = gemini ?? GeminiHighlightService(),
+        _geminiTimeout = geminiTimeout;
+
+  static const Duration defaultGeminiTimeout = Duration(seconds: 45);
 
   final PageImageCompressor _compressor;
   final GeminiHighlightService _gemini;
+  final Duration _geminiTimeout;
 
   Future<HighlightResponse> scan(
     File imageFile, {
@@ -33,7 +39,12 @@ class HighlightScanService {
 
     onStatus?.call('Finding highlighted text');
     try {
-      return await _gemini.analyze(compressed);
+      return await _gemini.analyze(compressed).timeout(_geminiTimeout);
+    } on TimeoutException catch (e) {
+      throw HighlightScanException(
+        'Could not read the page. The request timed out. Try again.',
+        cause: e,
+      );
     } catch (e) {
       throw HighlightScanException(
         'Could not read the page. Check your internet connection and try again.',

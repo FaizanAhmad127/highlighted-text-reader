@@ -7,10 +7,11 @@ import 'gemini_highlight_parser.dart';
 import 'page_image_compressor.dart';
 
 class GeminiHighlightService {
-  GeminiHighlightService({GenerativeModel? model})
-      : _model = model ?? _createModel();
+  GeminiHighlightService({GenerativeModel? model}) : _model = model;
 
-  final GenerativeModel _model;
+  GenerativeModel? _model;
+
+  GenerativeModel get _generativeModel => _model ??= _createModel();
 
   static GenerativeModel _createModel() {
     final schema = Schema.object(
@@ -48,7 +49,7 @@ class GeminiHighlightService {
   }
 
   Future<HighlightResponse> analyze(CompressedPageImage image) async {
-    final response = await _model.generateContent([
+    final response = await _generativeModel.generateContent([
       Content.multi([
         TextPart(
           'Extract every highlighted phrase from this page photo. '
