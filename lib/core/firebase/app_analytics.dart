@@ -38,7 +38,6 @@ class AppAnalytics {
     required bool found,
     required int highlightCount,
     required bool offline,
-    required bool dictionaryPartialFailure,
   }) {
     return _logEvent(
       'scan_completed',
@@ -46,7 +45,6 @@ class AppAnalytics {
         'found': found ? 1 : 0,
         'highlight_count': highlightCount,
         'offline': offline ? 1 : 0,
-        'dictionary_partial_failure': dictionaryPartialFailure ? 1 : 0,
       },
     );
   }

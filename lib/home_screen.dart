@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -10,7 +9,7 @@ import 'core/firebase/app_analytics.dart';
 import 'core/firebase/app_crashlytics.dart';
 import 'core/utils/connectivity_helper.dart';
 import 'core/utils/ui_helpers.dart';
-import 'data/services/text_processing_pipeline.dart';
+import 'data/services/highlight_scan_service.dart';
 import 'domain/entities/highlight.dart';
 import 'presentation/widgets/highlight/expandable_highlight_card.dart';
 import 'presentation/widgets/home/image_capture_section.dart';
@@ -23,7 +22,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextProcessingPipeline _pipeline = TextProcessingPipeline();
+  final HighlightScanService _scan = HighlightScanService();
   final ImagePicker _picker = ImagePicker();
 
   File? _image;
@@ -32,7 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _status;
   bool _offline = false;
   bool _skipNextConnectivityEvent = true;
-  bool _isRefreshingMeanings = false;
   int? _expandedHighlightIndex;
 
   @override
@@ -50,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
       unawaited(AppAnalytics.logConnectivityChanged(offline: true));
       UIHelpers.showSnackbar(
         context,
-        'You are offline. Highlighted text can still be read; definitions need internet.',
+        'You are offline. Connect to the internet to scan a page.',
       );
     }
   }
@@ -74,85 +72,30 @@ class _HomeScreenState extends State<HomeScreen> {
         unawaited(AppAnalytics.logConnectivityChanged(offline: true));
         UIHelpers.showSnackbar(
           context,
-          'You are offline. Highlighted text can still be read; definitions need internet.',
+          'You are offline. Connect to the internet to scan a page.',
         );
       } else if (!nowOffline && wasOffline) {
         unawaited(AppAnalytics.logConnectivityChanged(offline: false));
-        unawaited(_refreshPendingMeanings());
+        UIHelpers.showSnackbar(
+          context,
+          'Back online. You can scan a page now.',
+          icon: Icons.wifi,
+          backgroundColor: Colors.green.shade700,
+        );
       }
     });
   }
 
-  Future<void> _refreshPendingMeanings() async {
-    if (_isRefreshingMeanings || isFetchingMeaning) return;
-
-    final highlights = highlightResponse?.highlights;
-    if (highlights == null ||
-        highlights.isEmpty ||
-        !TextProcessingPipeline.hasPendingMeanings(highlights)) {
+  Future<void> _pickImage(ImageSource source) async {
+    if (_offline) {
+      unawaited(AppAnalytics.logScanFailed(reason: 'offline'));
+      UIHelpers.showSnackbar(
+        context,
+        'You are offline. Connect to the internet to scan a page.',
+      );
       return;
     }
 
-    final online = await ConnectivityHelper.hasConnection();
-    if (!online || !mounted) return;
-
-    UIHelpers.showSnackbar(
-      context,
-      'Connection restored — loading definitions. No need to upload the image again.',
-      icon: Icons.wifi,
-      backgroundColor: Colors.green.shade700,
-    );
-
-    setState(() => _isRefreshingMeanings = true);
-
-    try {
-      final updated = await _pipeline.refreshMeanings(highlights);
-      if (!mounted) return;
-
-      final updatedHighlights = updated.highlights ?? [];
-      final stillPending =
-          TextProcessingPipeline.hasPendingMeanings(updatedHighlights);
-
-      setState(() {
-        highlightResponse = highlightResponse?.copyWith(
-          highlights: updatedHighlights,
-        );
-        _isRefreshingMeanings = false;
-        _offline = false;
-      });
-
-      if (!mounted) return;
-
-      if (!stillPending) {
-        UIHelpers.showSnackbar(
-          context,
-          'Definitions loaded.',
-          icon: Icons.check_circle_outline,
-          backgroundColor: Colors.green.shade700,
-        );
-      } else if (_pipeline.hadNetworkLookupFailure &&
-          !TextProcessingPipeline.hasAnyLoadedDefinition(updatedHighlights)) {
-        UIHelpers.showSnackbar(
-          context,
-          'Definitions could not be loaded. Check your internet connection.',
-        );
-      }
-    } catch (e, st) {
-      await AppCrashlytics.recordNonFatal(
-        e,
-        st,
-        reason: 'meaning_refresh',
-      );
-      if (!mounted) return;
-      setState(() => _isRefreshingMeanings = false);
-      UIHelpers.showSnackbar(
-        context,
-        'Could not load definitions. We will retry when you are back online.',
-      );
-    }
-  }
-
-  Future<void> _pickImage(ImageSource source) async {
     final sourceName = source == ImageSource.camera ? 'camera' : 'gallery';
     unawaited(AppAnalytics.logImageSelected(source: sourceName));
     await AppCrashlytics.log('Image pick started: $sourceName');
@@ -160,14 +103,20 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       highlightResponse = null;
       _expandedHighlightIndex = null;
-      _status = 'Loading image';
+      _status = null;
     });
 
-    final pickedFile = await _picker.pickImage(source: source);
+    final pickedFile = await _picker.pickImage(
+      source: source,
+      maxWidth: AppConstants.maxImageEdgePx.toDouble(),
+      maxHeight: AppConstants.maxImageEdgePx.toDouble(),
+      imageQuality: AppConstants.jpegQuality,
+    );
+
+    if (!mounted) return;
 
     if (pickedFile == null) {
       setState(() => _status = null);
-      if (!mounted) return;
       UIHelpers.showSnackbar(context, 'No image selected, try again');
       return;
     }
@@ -175,6 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _image = File(pickedFile.path);
       isFetchingMeaning = true;
+      _status = 'Preparing photo';
     });
     unawaited(AppAnalytics.logScanStarted(offline: _offline));
     await _processImage();
@@ -188,17 +138,21 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     setState(() => _offline = !online);
 
+    if (!online) {
+      unawaited(AppAnalytics.logScanFailed(reason: 'offline'));
+      _fail('Connect to the internet to scan a page.');
+      return;
+    }
+
     setState(() => isFetchingMeaning = true);
     await AppCrashlytics.setCustomKeys({
       'offline': _offline,
-      'lookup_meanings': online,
     });
     await AppCrashlytics.log('Image processing started');
 
     try {
-      final result = await _pipeline.process(
+      final result = await _scan.scan(
         image,
-        lookupMeanings: online,
         onStatus: (status) {
           if (!mounted) return;
           setState(() => _status = status);
@@ -213,7 +167,6 @@ class _HomeScreenState extends State<HomeScreen> {
           found: found,
           highlightCount: highlightCount,
           offline: _offline,
-          dictionaryPartialFailure: _pipeline.hadNetworkLookupFailure,
         ),
       );
       await AppCrashlytics.setCustomKeys({
@@ -236,28 +189,16 @@ class _HomeScreenState extends State<HomeScreen> {
           context,
           'No highlighted text found. Use a sharp photo of a book page with highlighter marks.',
         );
-      } else if (_offline) {
-        UIHelpers.showSnackbar(
-          context,
-          'Highlighted text found. Definitions will load automatically when you are back online.',
-        );
-      } else if (_pipeline.hadNetworkLookupFailure &&
-          !TextProcessingPipeline.hasAnyLoadedDefinition(
-            result.highlights ?? [],
-          )) {
-        if (kDebugMode) {
-          print('Dictionary lookup issue: ${_pipeline.lastMeaningError}');
-        }
-        UIHelpers.showSnackbar(
-          context,
-          'Definitions could not be loaded. Check your internet connection.',
-        );
       } else {
         UIHelpers.showSnackbar(
           context,
-          'Enjoy the highlighted text. If the result looks off, try a higher-resolution photo.',
+          'Enjoy the highlighted text. Tap a phrase for literal and in-context meaning.',
         );
       }
+    } on HighlightScanException catch (e, st) {
+      await AppCrashlytics.recordNonFatal(e, st, reason: 'highlight_scan');
+      unawaited(AppAnalytics.logScanFailed(reason: 'highlight_scan'));
+      _fail(e.userMessage);
     } on UnsupportedError catch (e, st) {
       await AppCrashlytics.recordNonFatal(
         e,
@@ -269,9 +210,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e, st) {
       await AppCrashlytics.recordNonFatal(e, st, reason: 'image_processing');
       unawaited(AppAnalytics.logScanFailed(reason: 'image_processing'));
-      if (kDebugMode) {
-        print('Error processing image: $e\n$st');
-      }
       _fail(
         'Could not process the image. Try a clear photo of a book page with highlighted text.',
       );
@@ -332,33 +270,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 if (found) const SizedBox(height: 8),
-                if (_isRefreshingMeanings)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Connection restored — loading definitions…',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 Expanded(
                   child: isFetchingMeaning
                       ? UIHelpers.loadingIndicator()
@@ -370,7 +281,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             MediaQuery.paddingOf(context).bottom + 24,
                           ),
                           itemCount: highlights.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
                           itemBuilder: (context, index) {
                             final highlight = highlights[index];
                             return ExpandableHighlightCard(
@@ -405,5 +317,3 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-
-

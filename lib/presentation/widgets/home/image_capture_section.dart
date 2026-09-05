@@ -29,9 +29,8 @@ class ImageCaptureSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final screenHeight = MediaQuery.sizeOf(context).height;
-    final previewMaxHeight = compact
-        ? 112.0
-        : (image != null ? screenHeight * 0.32 : 200.0);
+    final previewMaxHeight =
+        compact ? 112.0 : (image != null ? screenHeight * 0.32 : 200.0);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -48,7 +47,8 @@ class ImageCaptureSection extends StatelessWidget {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.6)),
+              side:
+                  BorderSide(color: theme.dividerColor.withValues(alpha: 0.6)),
             ),
             clipBehavior: Clip.antiAlias,
             child: Column(
@@ -73,7 +73,7 @@ class ImageCaptureSection extends StatelessWidget {
                         child: _CaptureActionButton(
                           label: 'Gallery',
                           icon: Icons.photo_library_outlined,
-                          onPressed: isProcessing ? null : onGallery,
+                          onPressed: offline || isProcessing ? null : onGallery,
                           filled: false,
                         ),
                       ),
@@ -82,7 +82,7 @@ class ImageCaptureSection extends StatelessWidget {
                         child: _CaptureActionButton(
                           label: 'Camera',
                           icon: Icons.camera_alt_outlined,
-                          onPressed: isProcessing ? null : onCamera,
+                          onPressed: offline || isProcessing ? null : onCamera,
                           filled: true,
                         ),
                       ),
@@ -132,7 +132,7 @@ class _OfflineBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Offline — highlights work; definitions need internet',
+              'Offline — connect to the internet to scan a page',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onErrorContainer,
                 fontWeight: FontWeight.w500,
