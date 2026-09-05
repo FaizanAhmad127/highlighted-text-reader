@@ -52,6 +52,7 @@ class DictionaryMeaningService {
         Highlight(
           text: phrase.text,
           literal: literal ?? AppConstants.meaningUnavailablePlaceholder,
+          contextual: '',
           color: phrase.colorHex,
           textColor: phrase.textColorHex,
         ),

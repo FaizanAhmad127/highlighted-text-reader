@@ -1,12 +1,14 @@
 class Highlight {
   final String text;
   final String literal;
+  final String contextual;
   final String color;
   final String textColor;
 
   const Highlight({
     required this.text,
     required this.literal,
+    required this.contextual,
     required this.color,
     required this.textColor,
   });
@@ -14,12 +16,14 @@ class Highlight {
   Highlight copyWith({
     String? text,
     String? literal,
+    String? contextual,
     String? color,
     String? textColor,
   }) {
     return Highlight(
       text: text ?? this.text,
       literal: literal ?? this.literal,
+      contextual: contextual ?? this.contextual,
       color: color ?? this.color,
       textColor: textColor ?? this.textColor,
     );

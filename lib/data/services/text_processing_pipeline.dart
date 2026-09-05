@@ -68,6 +68,7 @@ class TextProcessingPipeline {
               (p) => Highlight(
                 text: p.text,
                 literal: AppConstants.meaningPendingPlaceholder,
+                contextual: '',
                 color: p.colorHex,
                 textColor: p.textColorHex,
               ),
