@@ -79,12 +79,28 @@ class ExpandableHighlightCard extends StatelessWidget {
                   ),
                   color: theme.colorScheme.surfaceContainerLow,
                 ),
-                child: SelectableText(
-                  highlight.literal,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Literal', style: theme.textTheme.labelMedium),
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      highlight.literal,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    if (highlight.contextual.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'In this sentence',
+                        style: theme.textTheme.labelMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        highlight.contextual,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ],
+                  ],
                 ),
               ),
           ],

@@ -260,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        '${highlights.length} highlight${highlights.length == 1 ? '' : 's'} — tap to see meaning',
+                        '${highlights.length} highlight${highlights.length == 1 ? '' : 's'} — tap for literal and in-context meaning',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Theme.of(context)
                                   .colorScheme

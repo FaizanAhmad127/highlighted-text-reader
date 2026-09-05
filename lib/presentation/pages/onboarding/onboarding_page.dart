@@ -58,7 +58,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
         PageViewModel(
           title: "Now wait while we process the image",
           bodyWidget: const Text(
-            " - If the image is blur or of low resolution you might need to take the picture again.\n- If there is no highlighted text then you won't get any result.\n- If everything is fine, you will get the literal meaning of the highlighted text/phrases.",
+            "- Use a sharp, well-lit photo of the page.\n- You need an internet connection to find highlights and meanings.\n- If nothing is highlighted, you will not get a result.\n- For each phrase you will get a short literal meaning and how it is used in the sentence.",
             textAlign: TextAlign.justify,
             style: UIHelpers.bodyTextStyle,
           ),
