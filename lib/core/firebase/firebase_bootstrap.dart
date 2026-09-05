@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
@@ -49,6 +51,24 @@ class FirebaseBootstrap {
 
     _analytics = FirebaseAnalytics.instance;
     _crashlytics = FirebaseCrashlytics.instance;
+
+    await FirebaseAppCheck.instance.activate(
+      androidProvider:
+          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+      appleProvider:
+          kDebugMode ? AppleProvider.debug : AppleProvider.deviceCheck,
+    );
+
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        print('Anonymous auth failed: $e\n$st');
+      }
+      await _crashlytics?.recordError(e, st, fatal: false);
+    }
 
     await _crashlytics!.setCrashlyticsCollectionEnabled(!kDebugMode);
 
