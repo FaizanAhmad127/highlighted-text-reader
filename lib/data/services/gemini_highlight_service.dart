@@ -3,13 +3,26 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../domain/entities/highlight.dart';
+import '../../domain/entities/meaning_language.dart';
 import 'gemini_highlight_parser.dart';
+import 'meaning_language_prompt.dart';
 import 'page_image_compressor.dart';
 
 class GeminiHighlightService {
   GeminiHighlightService({GenerativeModel? model}) : _model = model;
 
   GenerativeModel? _model;
+
+  static const systemInstruction =
+      'You read a photo of a printed book or document page. '
+      'Find only text that is marked with highlighter ink (any color). '
+      'Do not invent phrases. If nothing is highlighted, return {"highlights":[]}. '
+      'Preserve reading order (top to bottom, left to right). '
+      'literal = short dictionary-style meaning. '
+      'contextual = how the phrase is used in this sentence. '
+      'Follow the meaning-language rule in the user message. '
+      'Keep highlighted phrases in their original language. '
+      'color = highlighter ink as 0xAARRGGBB when you can see it.';
 
   GenerativeModel get _generativeModel => _model ??= _createModel();
 
@@ -36,23 +49,19 @@ class GeminiHighlightService {
         responseSchema: schema,
         thinkingConfig: ThinkingConfig.withThinkingLevel(ThinkingLevel.minimal),
       ),
-      systemInstruction: Content.system(
-        'You read a photo of a printed book or document page. '
-        'Find only text that is marked with highlighter ink (any color). '
-        'Do not invent phrases. If nothing is highlighted, return {"highlights":[]}. '
-        'Preserve reading order (top to bottom, left to right). '
-        'literal = short dictionary-style meaning. '
-        'contextual = how the phrase is used in this sentence. '
-        'color = highlighter ink as 0xAARRGGBB when you can see it.',
-      ),
+      systemInstruction: Content.system(systemInstruction),
     );
   }
 
-  Future<HighlightResponse> analyze(CompressedPageImage image) async {
+  Future<HighlightResponse> analyze(
+    CompressedPageImage image, {
+    MeaningLanguage meaningLanguage = MeaningLanguage.defaultLanguage,
+  }) async {
     final response = await _generativeModel.generateContent([
       Content.multi([
         TextPart(
           'Extract every highlighted phrase from this page photo. '
+          '${MeaningLanguagePrompt.userInstruction(meaningLanguage)} '
           'Return JSON only.',
         ),
         InlineDataPart(image.mimeType, image.bytes),

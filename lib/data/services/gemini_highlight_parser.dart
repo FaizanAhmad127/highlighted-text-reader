@@ -4,7 +4,6 @@ import '../../domain/entities/highlight.dart';
 
 class GeminiHighlightParser {
   static const defaultInk = '0xFFE8C547';
-  static const defaultText = '0xFF1A1A1A';
 
   static HighlightResponse parse(String? raw) {
     if (raw == null || raw.trim().isEmpty) {
@@ -32,7 +31,6 @@ class GeminiHighlightParser {
             literal: literal.isEmpty ? 'Meaning unavailable.' : literal,
             contextual: contextual,
             color: _color('${item['color'] ?? ''}'),
-            textColor: defaultText,
           ),
         );
       }

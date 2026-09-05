@@ -166,39 +166,39 @@ class _PreviewArea extends StatelessWidget {
       return _EmptyPreview(theme: theme);
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: isProcessing
-                ? null
-                : () => FullScreenImageViewer.open(context, image!),
-            child: Image.file(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isProcessing
+            ? null
+            : () => FullScreenImageViewer.open(context, image!),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.file(
               image!,
               fit: BoxFit.cover,
               width: double.infinity,
               height: double.infinity,
             ),
-          ),
-        ),
-        if (isProcessing) _ProcessingOverlay(status: status, theme: theme),
-        if (!isProcessing)
-          Positioned(
-            left: 10,
-            bottom: 10,
-            right: 10,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: _PreviewChip(
-                icon: Icons.fullscreen_rounded,
-                label: compact ? 'Tap to expand' : 'Tap to view full image',
-                theme: theme,
+            if (isProcessing) _ProcessingOverlay(status: status, theme: theme),
+            if (!isProcessing)
+              Positioned(
+                left: 10,
+                bottom: 10,
+                right: 10,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: _PreviewChip(
+                    icon: Icons.fullscreen_rounded,
+                    label: compact ? 'Tap to expand' : 'Tap to view full image',
+                    theme: theme,
+                  ),
+                ),
               ),
-            ),
-          ),
-      ],
+          ],
+        ),
+      ),
     );
   }
 }

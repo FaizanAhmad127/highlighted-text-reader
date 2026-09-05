@@ -69,9 +69,7 @@ class FirebaseBootstrap {
     }
 
     try {
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
-      }
+      await ensureAnonymousUser();
     } catch (e, st) {
       if (kDebugMode) {
         print('Anonymous auth failed: $e\n$st');
@@ -90,6 +88,44 @@ class FirebaseBootstrap {
       _crashlytics!.recordError(error, stack, fatal: true);
       return true;
     };
+  }
+
+  /// Signs in anonymously, or replaces a cached user that was deleted
+  /// in the Firebase Console.
+  static Future<void> ensureAnonymousUser() async {
+    if (!isSupported) return;
+
+    final auth = FirebaseAuth.instance;
+    try {
+      final user = auth.currentUser;
+      if (user == null) {
+        await auth.signInAnonymously();
+        return;
+      }
+      await user.reload();
+      if (auth.currentUser == null) {
+        await auth.signInAnonymously();
+      }
+    } catch (e) {
+      if (!_isDeletedOrInvalidUser(e)) rethrow;
+      await auth.signOut();
+      await auth.signInAnonymously();
+    }
+  }
+
+  static bool _isDeletedOrInvalidUser(Object error) {
+    if (error is FirebaseAuthException) {
+      return const {
+        'user-not-found',
+        'user-token-expired',
+        'invalid-user-token',
+        'user-disabled',
+      }.contains(error.code);
+    }
+    final text = error.toString().toLowerCase();
+    return text.contains('user-not-found') ||
+        text.contains('user-token-expired') ||
+        text.contains('invalid-user-token');
   }
 
   static void runGuarded(VoidCallback runApp) {

@@ -48,7 +48,7 @@ class ExpandableHighlightCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SelectableText(
+                          Text(
                             highlight.text,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w500,

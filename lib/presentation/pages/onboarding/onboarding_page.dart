@@ -58,7 +58,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
         PageViewModel(
           title: "Now wait while we process the image",
           bodyWidget: const Text(
-            "- Use a sharp, well-lit photo of the page.\n- You need an internet connection to find highlights and meanings.\n- If nothing is highlighted, you will not get a result.\n- For each phrase you will get a short literal meaning and how it is used in the sentence.",
+            "- Use a sharp, well-lit photo of the page.\n- You need an internet connection to find highlights and meanings.\n- If nothing is highlighted, you will not get a result.\n- Meanings can match the highlighted phrase or a language you choose in the app.",
             textAlign: TextAlign.justify,
             style: UIHelpers.bodyTextStyle,
           ),

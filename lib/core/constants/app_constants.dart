@@ -16,4 +16,6 @@ class AppConstants {
   static const String geminiModelId = 'gemini-3.5-flash-lite';
   static const int maxImageEdgePx = 1536;
   static const int jpegQuality = 70;
+  static const int maxScansPerDay = 20;
+  static const Duration scanCooldown = Duration(seconds: 8);
 }

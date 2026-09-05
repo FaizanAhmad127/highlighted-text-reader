@@ -35,6 +35,14 @@ void main() {
     expect(GeminiHighlightParser.parse('not-json').found, isFalse);
   });
 
+  test('keeps non-English meanings as returned', () {
+    final result = GeminiHighlightParser.parse(
+      '{"highlights":[{"text":"محنت","literal":"کوشش","contextual":"یہاں محنت کا مطلب لگاتار کوشش ہے۔","color":"0xFFE8C547"}]}',
+    );
+    expect(result.highlights!.first.literal, 'کوشش');
+    expect(result.highlights!.first.contextual, contains('کوشش'));
+  });
+
   test('drops items with empty text', () {
     final result = GeminiHighlightParser.parse(
       '{"highlights":[{"text":"","literal":"x","contextual":"y"}]}',

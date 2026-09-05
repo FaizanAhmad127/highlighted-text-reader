@@ -1,45 +1,34 @@
 PODS:
+  - AppCheckCore (11.3.1):
+    - GoogleUtilities/Environment (~> 8.0)
+    - GoogleUtilities/UserDefaults (~> 8.0)
+    - PromisesObjC (~> 2.4)
+    - PromisesSwift (~> 2.4)
+    - RecaptchaInterop (~> 101.0)
   - connectivity_plus (0.0.1):
     - Flutter
-  - DartCvIOS (4.12.0.2):
-    - DartCvIOS/calib3d (= 4.12.0.2)
-    - DartCvIOS/contrib (= 4.12.0.2)
-    - DartCvIOS/core (= 4.12.0.2)
-    - DartCvIOS/features2d (= 4.12.0.2)
-    - DartCvIOS/imgproc (= 4.12.0.2)
-    - DartCvIOS/objdetect (= 4.12.0.2)
-    - DartCvIOS/photo (= 4.12.0.2)
-    - DartCvIOS/stitching (= 4.12.0.2)
-    - DartCvIOS/video (= 4.12.0.2)
-  - DartCvIOS/calib3d (4.12.0.2):
-    - DartCvIOS/core
-  - DartCvIOS/contrib (4.12.0.2):
-    - DartCvIOS/core
-  - DartCvIOS/core (4.12.0.2)
-  - DartCvIOS/dnn (4.12.0.2):
-    - DartCvIOS/core
-  - DartCvIOS/features2d (4.12.0.2):
-    - DartCvIOS/core
-  - DartCvIOS/imgproc (4.12.0.2):
-    - DartCvIOS/core
-  - DartCvIOS/objdetect (4.12.0.2):
-    - DartCvIOS/core
-  - DartCvIOS/photo (4.12.0.2):
-    - DartCvIOS/core
-  - DartCvIOS/stitching (4.12.0.2):
-    - DartCvIOS/core
-  - DartCvIOS/video (4.12.0.2):
-    - DartCvIOS/core
-  - DartCvIOS/videoio (4.12.0.2):
-    - DartCvIOS/core
+  - Firebase/Auth (12.18.0):
+    - Firebase/CoreOnly
+    - FirebaseAuth (~> 12.18.0)
   - Firebase/CoreOnly (12.18.0):
     - FirebaseCore (~> 12.18.0)
   - Firebase/Crashlytics (12.18.0):
     - Firebase/CoreOnly
     - FirebaseCrashlytics (~> 12.18.0)
+  - firebase_ai (3.15.0):
+    - Flutter
   - firebase_analytics (12.5.0):
     - firebase_core
     - FirebaseAnalytics (= 12.18.0)
+    - Flutter
+  - firebase_app_check (0.4.7):
+    - Firebase/CoreOnly (~> 12.18.0)
+    - firebase_core
+    - FirebaseAppCheck (~> 12.18.0)
+    - Flutter
+  - firebase_auth (6.6.1):
+    - Firebase/Auth (= 12.18.0)
+    - firebase_core
     - Flutter
   - firebase_core (4.14.0):
     - Firebase/CoreOnly (= 12.18.0)
@@ -66,6 +55,23 @@ PODS:
     - GoogleUtilities/Network (~> 8.1)
     - "GoogleUtilities/NSData+zlib (~> 8.1)"
     - nanopb (~> 3.30910.0)
+  - FirebaseAppCheck (12.18.0):
+    - AppCheckCore (~> 11.3)
+    - FirebaseAppCheckInterop (~> 12.18.0)
+    - FirebaseCore (~> 12.18.0)
+    - GoogleUtilities/Environment (~> 8.1)
+    - GoogleUtilities/UserDefaults (~> 8.1)
+  - FirebaseAppCheckInterop (12.18.0)
+  - FirebaseAuth (12.18.0):
+    - FirebaseAppCheckInterop (~> 12.18.0)
+    - FirebaseAuthInterop (~> 12.18.0)
+    - FirebaseCore (~> 12.18.0)
+    - FirebaseCoreExtension (~> 12.18.0)
+    - GoogleUtilities/AppDelegateSwizzler (~> 8.1)
+    - GoogleUtilities/Environment (~> 8.1)
+    - GTMSessionFetcher/Core (< 6.0, >= 3.4)
+    - RecaptchaInterop (~> 101.0)
+  - FirebaseAuthInterop (12.18.0)
   - FirebaseCore (12.18.0):
     - FirebaseCoreInternal (~> 12.18.0)
     - GoogleUtilities/Environment (~> 8.1)
@@ -101,13 +107,6 @@ PODS:
   - Flutter (1.0.0)
   - flutter_keyboard_visibility (0.0.1):
     - Flutter
-  - google_mlkit_commons (0.11.1):
-    - Flutter
-    - MLKitVision (~> 10.0.0)
-  - google_mlkit_text_recognition (0.15.1):
-    - Flutter
-    - google_mlkit_commons
-    - GoogleMLKit/TextRecognition (~> 9.0.0)
   - GoogleAdsOnDeviceConversion (3.6.1):
     - GoogleUtilities/Environment (~> 8.1)
     - GoogleUtilities/Logger (~> 8.1)
@@ -138,16 +137,6 @@ PODS:
   - GoogleDataTransport (10.1.1):
     - nanopb (~> 3.30910.0)
     - PromisesObjC (~> 2.4)
-  - GoogleMLKit/MLKitCore (9.0.0):
-    - MLKitCommon (~> 14.0.0)
-  - GoogleMLKit/TextRecognition (9.0.0):
-    - GoogleMLKit/MLKitCore
-    - MLKitTextRecognition (~> 7.0.0)
-  - GoogleToolboxForMac/Defines (4.2.1)
-  - GoogleToolboxForMac/Logger (4.2.1):
-    - GoogleToolboxForMac/Defines (= 4.2.1)
-  - "GoogleToolboxForMac/NSData+zlib (4.2.1)":
-    - GoogleToolboxForMac/Defines (= 4.2.1)
   - GoogleUtilities/AppDelegateSwizzler (8.1.3):
     - GoogleUtilities/Environment
     - GoogleUtilities/Logger
@@ -175,61 +164,44 @@ PODS:
   - GoogleUtilities/UserDefaults (8.1.3):
     - GoogleUtilities/Logger
     - GoogleUtilities/Privacy
-  - GTMSessionFetcher/Core (3.5.0)
+  - GTMSessionFetcher/Core (5.3.1)
   - image_picker_ios (0.0.1):
     - Flutter
-  - MLImage (1.0.0-beta8)
-  - MLKitCommon (14.0.0):
-    - GoogleDataTransport (~> 10.0)
-    - GoogleToolboxForMac/Logger (< 5.0, >= 4.2.1)
-    - "GoogleToolboxForMac/NSData+zlib (< 5.0, >= 4.2.1)"
-    - GoogleUtilities/Logger (~> 8.0)
-    - GoogleUtilities/UserDefaults (~> 8.0)
-    - GTMSessionFetcher/Core (< 4.0, >= 3.3.2)
-  - MLKitTextRecognition (7.0.0):
-    - MLKitCommon (~> 14.0)
-    - MLKitTextRecognitionCommon (= 6.0.0)
-    - MLKitVision (~> 10.0)
-  - MLKitTextRecognitionCommon (6.0.0):
-    - MLKitCommon (~> 14.0)
-    - MLKitVision (~> 10.0)
-  - MLKitVision (10.0.0):
-    - GoogleToolboxForMac/Logger (< 5.0, >= 4.2.1)
-    - "GoogleToolboxForMac/NSData+zlib (< 5.0, >= 4.2.1)"
-    - GTMSessionFetcher/Core (< 4.0, >= 3.3.2)
-    - MLImage (= 1.0.0-beta8)
-    - MLKitCommon (~> 14.0)
   - nanopb (3.30910.0):
     - nanopb/decode (= 3.30910.0)
     - nanopb/encode (= 3.30910.0)
   - nanopb/decode (3.30910.0)
   - nanopb/encode (3.30910.0)
-  - opencv_dart (0.0.1):
-    - DartCvIOS (= 4.12.0.2)
-    - DartCvIOS/dnn (= 4.12.0.2)
-    - DartCvIOS/videoio (= 4.12.0.2)
-    - Flutter
   - PromisesObjC (2.4.1)
   - PromisesSwift (2.4.1):
     - PromisesObjC (= 2.4.1)
+  - RecaptchaInterop (101.0.0)
+  - shared_preferences_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
 
 DEPENDENCIES:
   - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
+  - firebase_ai (from `.symlinks/plugins/firebase_ai/ios`)
   - firebase_analytics (from `.symlinks/plugins/firebase_analytics/ios`)
+  - firebase_app_check (from `.symlinks/plugins/firebase_app_check/ios`)
+  - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
   - firebase_crashlytics (from `.symlinks/plugins/firebase_crashlytics/ios`)
   - Flutter (from `Flutter`)
   - flutter_keyboard_visibility (from `.symlinks/plugins/flutter_keyboard_visibility/ios`)
-  - google_mlkit_commons (from `.symlinks/plugins/google_mlkit_commons/ios`)
-  - google_mlkit_text_recognition (from `.symlinks/plugins/google_mlkit_text_recognition/ios`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
-  - opencv_dart (from `.symlinks/plugins/opencv_dart/ios`)
+  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
 
 SPEC REPOS:
   trunk:
-    - DartCvIOS
+    - AppCheckCore
     - Firebase
     - FirebaseAnalytics
+    - FirebaseAppCheck
+    - FirebaseAppCheckInterop
+    - FirebaseAuth
+    - FirebaseAuthInterop
     - FirebaseCore
     - FirebaseCoreExtension
     - FirebaseCoreInternal
@@ -240,24 +212,24 @@ SPEC REPOS:
     - GoogleAdsOnDeviceConversion
     - GoogleAppMeasurement
     - GoogleDataTransport
-    - GoogleMLKit
-    - GoogleToolboxForMac
     - GoogleUtilities
     - GTMSessionFetcher
-    - MLImage
-    - MLKitCommon
-    - MLKitTextRecognition
-    - MLKitTextRecognitionCommon
-    - MLKitVision
     - nanopb
     - PromisesObjC
     - PromisesSwift
+    - RecaptchaInterop
 
 EXTERNAL SOURCES:
   connectivity_plus:
     :path: ".symlinks/plugins/connectivity_plus/ios"
+  firebase_ai:
+    :path: ".symlinks/plugins/firebase_ai/ios"
   firebase_analytics:
     :path: ".symlinks/plugins/firebase_analytics/ios"
+  firebase_app_check:
+    :path: ".symlinks/plugins/firebase_app_check/ios"
+  firebase_auth:
+    :path: ".symlinks/plugins/firebase_auth/ios"
   firebase_core:
     :path: ".symlinks/plugins/firebase_core/ios"
   firebase_crashlytics:
@@ -266,23 +238,26 @@ EXTERNAL SOURCES:
     :path: Flutter
   flutter_keyboard_visibility:
     :path: ".symlinks/plugins/flutter_keyboard_visibility/ios"
-  google_mlkit_commons:
-    :path: ".symlinks/plugins/google_mlkit_commons/ios"
-  google_mlkit_text_recognition:
-    :path: ".symlinks/plugins/google_mlkit_text_recognition/ios"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
-  opencv_dart:
-    :path: ".symlinks/plugins/opencv_dart/ios"
+  shared_preferences_foundation:
+    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
 
 SPEC CHECKSUMS:
+  AppCheckCore: e215d35177a9cf469927863e69c13e220df32a8b
   connectivity_plus: cb623214f4e1f6ef8fe7403d580fdad517d2f7dd
-  DartCvIOS: 31615ff863f0fc709aee9b93dc3afa3500d35ba7
   Firebase: 5523dd53ebe603451b4e1befcd99fa20a5c015cd
+  firebase_ai: c34eded5e538a2924401afab022d1cd5e3ba8453
   firebase_analytics: eabab995ffa6e93bf1888e573eda3a8264c0f30f
+  firebase_app_check: 1745908cb7f876fae823707a18e5ad1a21a9d083
+  firebase_auth: 4c0f66df5d18671fd5ce6d6e9eb5ebdb653e03e5
   firebase_core: 22b31970001508f6e63945bedcb7b9de68819aa5
   firebase_crashlytics: f849aa211acedd808e8edc055d57d5aaeb7a2633
   FirebaseAnalytics: 651ecdc96c7dd8df0c15d55b6c6b70f78c2987b9
+  FirebaseAppCheck: 06fc2eca9cc0499dc393f9d4320faeb373b24851
+  FirebaseAppCheckInterop: 8c2fe8b563377bd948ee6acc2871fe2dfb3a034a
+  FirebaseAuth: 389097b0c63059262aa02800cb0b93c9fab09130
+  FirebaseAuthInterop: 32c03820809ddc9e63dfaaf3711ce2ac8da7e6ae
   FirebaseCore: 96787d19ee32dc2242cc487b301bc616afeb398b
   FirebaseCoreExtension: a86bab02524ca2bff95dddab7a3fcad505c2ddeb
   FirebaseCoreInternal: 93b2d5f9e184c6818a04433891c358b0720a6a38
@@ -292,25 +267,17 @@ SPEC CHECKSUMS:
   FirebaseSessions: 3eaac5fd8077513b95f9723efd940438e3e35fb2
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_keyboard_visibility: 4625131e43015dbbe759d9b20daaf77e0e3f6619
-  google_mlkit_commons: a5e4ffae5bc59ea4c7b9025dc72cb6cb79dc1166
-  google_mlkit_text_recognition: b3de5adb786ad7a0fe8e13618387b8d2df0f3c70
   GoogleAdsOnDeviceConversion: e3b71da24ff4cf01cf520756ac1c2b93c07b86ff
   GoogleAppMeasurement: d70df385587c4175fc0836c11e413d5cbcaa3c7b
   GoogleDataTransport: a24e58982ab3ba2f64d79613e027fe7f57e88539
-  GoogleMLKit: b1eee21a41c57704fe72483b15c85cb2c0cd7444
-  GoogleToolboxForMac: d1a2cbf009c453f4d6ded37c105e2f67a32206d8
   GoogleUtilities: 4e0c2ad9fa0d0d18b5c4df8bf57b461cba35b0bb
-  GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
+  GTMSessionFetcher: a6d2b2aa203485893d4511ff64642dc811f7c09f
   image_picker_ios: 7fe1ff8e34c1790d6fff70a32484959f563a928a
-  MLImage: 0de5c6c2bf9e93b80ef752e2797f0836f03b58c0
-  MLKitCommon: 47d47b50a031d00db62f1b0efe5a1d8b09a3b2e6
-  MLKitTextRecognition: c0ad24510481dfc8893ad15dfcb8a5f05ed9e826
-  MLKitTextRecognitionCommon: 234ceb1cfdfb5fceb4fd664943046609a2961cc2
-  MLKitVision: 39a5a812db83c4a0794445088e567f3631c11961
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
-  opencv_dart: 71fc6f2ae1f9feb2f143eeee32823f3dc492ab47
   PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273
   PromisesSwift: 217dea0fd5d2ad65222a109c48698add13cc1c5b
+  RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
+  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
 
 PODFILE CHECKSUM: 6697a78e157e5d309c016235ea6f01c3f0fd3e73
 

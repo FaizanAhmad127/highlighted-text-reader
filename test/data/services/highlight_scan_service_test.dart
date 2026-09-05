@@ -7,9 +7,49 @@ import 'package:highlighted_text_reader/data/services/gemini_highlight_service.d
 import 'package:highlighted_text_reader/data/services/highlight_scan_service.dart';
 import 'package:highlighted_text_reader/data/services/page_image_compressor.dart';
 import 'package:highlighted_text_reader/domain/entities/highlight.dart';
+import 'package:highlighted_text_reader/domain/entities/meaning_language.dart';
 
 void main() {
-  test('scan preserves the generic message for Gemini failures', () async {
+  test('maps prepaid billing errors to a paused-scanning message', () {
+    expect(
+      HighlightScanErrors.userMessage(
+        Exception('Add funds to your prepaid billing account'),
+      ),
+      HighlightScanErrors.billing,
+    );
+  });
+
+  test('maps quota errors to a wait-and-retry message', () {
+    expect(
+      HighlightScanErrors.userMessage(
+        Exception('RESOURCE_EXHAUSTED: quota exceeded'),
+      ),
+      HighlightScanErrors.quota,
+    );
+  });
+
+  test('maps a deleted Firebase Auth user to a temporary-unavailable message',
+      () {
+    expect(
+      HighlightScanErrors.userMessage(
+        Exception(
+          '[firebase_auth/user-not-found] There is no user record corresponding to this identifier.',
+        ),
+      ),
+      HighlightScanErrors.unavailable,
+    );
+  });
+
+  test('maps permission errors to a temporary-unavailable message', () {
+    expect(
+      HighlightScanErrors.userMessage(
+        Exception('PERMISSION_DENIED: Firebase App Check token is invalid'),
+      ),
+      HighlightScanErrors.unavailable,
+    );
+  });
+
+  test('scan uses a generic retry message, not an internet message', () async {
     final service = HighlightScanService(
       compressor: _FakeCompressor(),
       gemini: _ThrowingGemini(),
@@ -21,7 +61,7 @@ void main() {
         isA<HighlightScanException>().having(
           (error) => error.userMessage,
           'userMessage',
-          'Could not read the page. Check your internet connection and try again.',
+          HighlightScanErrors.generic,
         ),
       ),
     );
@@ -40,7 +80,7 @@ void main() {
         isA<HighlightScanException>().having(
           (error) => error.userMessage,
           'userMessage',
-          'Could not read the page. The request timed out. Try again.',
+          HighlightScanErrors.timedOut,
         ),
       ),
     );
@@ -56,14 +96,20 @@ class _FakeCompressor implements PageImageCompressor {
 
 class _ThrowingGemini implements GeminiHighlightService {
   @override
-  Future<HighlightResponse> analyze(CompressedPageImage image) async {
+  Future<HighlightResponse> analyze(
+    CompressedPageImage image, {
+    MeaningLanguage meaningLanguage = MeaningLanguage.defaultLanguage,
+  }) async {
     throw StateError('Gemini failed');
   }
 }
 
 class _NeverCompletesGemini implements GeminiHighlightService {
   @override
-  Future<HighlightResponse> analyze(CompressedPageImage image) {
+  Future<HighlightResponse> analyze(
+    CompressedPageImage image, {
+    MeaningLanguage meaningLanguage = MeaningLanguage.defaultLanguage,
+  }) {
     return Completer<HighlightResponse>().future;
   }
 }

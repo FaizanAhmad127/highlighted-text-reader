@@ -1,18 +1,24 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/firebase/app_analytics.dart';
 import 'core/firebase/app_crashlytics.dart';
+import 'core/firebase/firebase_bootstrap.dart';
 import 'core/utils/connectivity_helper.dart';
 import 'core/utils/ui_helpers.dart';
 import 'data/services/highlight_scan_service.dart';
+import 'data/services/meaning_language_store.dart';
+import 'data/services/scan_rate_limiter.dart';
 import 'domain/entities/highlight.dart';
+import 'domain/entities/meaning_language.dart';
 import 'presentation/widgets/highlight/expandable_highlight_card.dart';
 import 'presentation/widgets/home/image_capture_section.dart';
+import 'presentation/widgets/home/meaning_language_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,7 +29,12 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final HighlightScanService _scan = HighlightScanService();
+  final ScanRateLimiter _rateLimiter = ScanRateLimiter(
+    maxScansPerDay: AppConstants.maxScansPerDay,
+    cooldown: AppConstants.scanCooldown,
+  );
   final ImagePicker _picker = ImagePicker();
+  final MeaningLanguageStore _languageStore = MeaningLanguageStore();
 
   File? _image;
   HighlightResponse? highlightResponse;
@@ -31,12 +42,32 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _status;
   bool _offline = false;
   bool _skipNextConnectivityEvent = true;
+  StreamSubscription<dynamic>? _connectivitySub;
   int? _expandedHighlightIndex;
+  MeaningLanguage _meaningLanguage = MeaningLanguage.defaultLanguage;
 
   @override
   void initState() {
     super.initState();
-    _refreshConnectivity(silent: true);
+    _initConnectivity();
+    _loadMeaningLanguage();
+  }
+
+  Future<void> _loadMeaningLanguage() async {
+    final language = await _languageStore.read();
+    if (!mounted) return;
+    setState(() => _meaningLanguage = language);
+  }
+
+  @override
+  void dispose() {
+    _connectivitySub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initConnectivity() async {
+    await _refreshConnectivity(silent: true);
+    if (!mounted) return;
     _setupConnectivityListener();
   }
 
@@ -54,33 +85,33 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _setupConnectivityListener() {
-    ConnectivityHelper.onConnectivityChanged.listen((results) {
+    _connectivitySub = ConnectivityHelper.onConnectivityChanged.listen((results) {
       if (!mounted) return;
 
-      // The first stream event often fires right after navigation; ignore it.
+      // Replay of the current state after subscribe — not a real change.
       if (_skipNextConnectivityEvent) {
         _skipNextConnectivityEvent = false;
-        setState(() => _offline = ConnectivityHelper.isOffline(results));
         return;
       }
 
       final nowOffline = ConnectivityHelper.isOffline(results);
       final wasOffline = _offline;
+      if (nowOffline == wasOffline) return;
+
       setState(() => _offline = nowOffline);
 
-      if (nowOffline && !wasOffline) {
+      if (nowOffline) {
         unawaited(AppAnalytics.logConnectivityChanged(offline: true));
         UIHelpers.showSnackbar(
           context,
           'You are offline. Connect to the internet to scan a page.',
         );
-      } else if (!nowOffline && wasOffline) {
+      } else {
         unawaited(AppAnalytics.logConnectivityChanged(offline: false));
         UIHelpers.showSnackbar(
           context,
           'Back online. You can scan a page now.',
           icon: Icons.wifi,
-          backgroundColor: Colors.green.shade700,
         );
       }
     });
@@ -95,6 +126,8 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
+
+    if (!await _ensureCanScan()) return;
 
     final sourceName = source == ImageSource.camera ? 'camera' : 'gallery';
     unawaited(AppAnalytics.logImageSelected(source: sourceName));
@@ -144,6 +177,26 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    if (!await _ensureCanScan()) {
+      if (!mounted) return;
+      setState(() {
+        isFetchingMeaning = false;
+        _status = null;
+      });
+      return;
+    }
+
+    try {
+      await FirebaseBootstrap.ensureAnonymousUser();
+    } catch (e, st) {
+      await AppCrashlytics.recordNonFatal(e, st, reason: 'anonymous_auth');
+      unawaited(AppAnalytics.logScanFailed(reason: 'anonymous_auth'));
+      _fail('Scanning is temporarily unavailable. Please try again later.');
+      return;
+    }
+
+    await _rateLimiter.recordAttempt();
+
     setState(() => isFetchingMeaning = true);
     await AppCrashlytics.setCustomKeys({
       'offline': _offline,
@@ -153,6 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final result = await _scan.scan(
         image,
+        meaningLanguage: _meaningLanguage,
         onStatus: (status) {
           if (!mounted) return;
           setState(() => _status = status);
@@ -196,7 +250,14 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } on HighlightScanException catch (e, st) {
-      await AppCrashlytics.recordNonFatal(e, st, reason: 'highlight_scan');
+      if (kDebugMode) {
+        print('HighlightScanException cause: ${e.cause ?? e}');
+      }
+      await AppCrashlytics.recordNonFatal(
+        e.cause ?? e,
+        st,
+        reason: 'highlight_scan',
+      );
       unawaited(AppAnalytics.logScanFailed(reason: 'highlight_scan'));
       _fail(e.userMessage);
     } on UnsupportedError catch (e, st) {
@@ -214,6 +275,39 @@ class _HomeScreenState extends State<HomeScreen> {
         'Could not process the image. Try a clear photo of a book page with highlighted text.',
       );
     }
+  }
+
+  Future<void> _pickMeaningLanguage() async {
+    final selected = await MeaningLanguageSheet.show(
+      context,
+      selected: _meaningLanguage,
+    );
+    if (selected == null || !mounted || selected == _meaningLanguage) return;
+
+    await _languageStore.write(selected);
+    if (!mounted) return;
+    setState(() => _meaningLanguage = selected);
+
+    final nextLabel = selected.matchesHighlight
+        ? 'the same language as the highlighted text'
+        : selected.name;
+    UIHelpers.showSnackbar(
+      context,
+      'Meanings will use $nextLabel on the next scan.',
+    );
+  }
+
+  Future<bool> _ensureCanScan() async {
+    final decision = await _rateLimiter.check();
+    if (decision.allowed) return true;
+    if (!mounted) return false;
+
+    final reason = decision.userMessage == ScanRateLimiter.dailyLimitMessage
+        ? 'daily_limit'
+        : 'cooldown';
+    unawaited(AppAnalytics.logScanFailed(reason: reason));
+    UIHelpers.showSnackbar(context, decision.userMessage!);
+    return false;
   }
 
   void _fail(String message) {
@@ -237,6 +331,13 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: false,
         elevation: 0,
         scrolledUnderElevation: 1,
+        actions: [
+          IconButton(
+            tooltip: 'Meaning language',
+            icon: const Icon(Icons.translate),
+            onPressed: isFetchingMeaning ? null : _pickMeaningLanguage,
+          ),
+        ],
       ),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.start,

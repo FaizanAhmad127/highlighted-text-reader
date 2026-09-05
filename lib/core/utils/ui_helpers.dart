@@ -7,19 +7,25 @@ class UIHelpers {
     BuildContext context,
     String message, {
     int durationSeconds = AppConstants.snackbarDurationSeconds,
-    Color backgroundColor = Colors.blueAccent,
+    Color? backgroundColor,
     IconData icon = Icons.info,
   }) {
+    final theme = Theme.of(context);
     final snackBar = SnackBar(
       duration: Duration(seconds: durationSeconds),
       content: Row(
         children: [
-          Icon(icon, color: Colors.white),
+          Icon(icon, color: theme.colorScheme.onPrimary),
           const SizedBox(width: 8),
-          Expanded(child: Text(message)),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: theme.colorScheme.onPrimary),
+            ),
+          ),
         ],
       ),
-      backgroundColor: backgroundColor,
+      backgroundColor: backgroundColor ?? theme.colorScheme.primary,
       behavior: SnackBarBehavior.fixed,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
