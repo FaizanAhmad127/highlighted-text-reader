@@ -17,4 +17,8 @@ class AppConstants {
   static const String meaningPendingPlaceholder =
       'Connect to the internet for definitions.';
   static const String meaningUnavailablePlaceholder = 'Meaning unavailable.';
+
+  static const String geminiModelId = 'gemini-3.5-flash-lite';
+  static const int maxImageEdgePx = 1536;
+  static const int jpegQuality = 70;
 }
