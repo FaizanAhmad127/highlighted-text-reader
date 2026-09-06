@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,6 +6,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../firebase_options.dart';
+import '../../secrets/app_check_debug.dart';
 
 /// Initializes Firebase and wires global crash reporting for mobile builds.
 class FirebaseBootstrap {
@@ -55,7 +54,11 @@ class FirebaseBootstrap {
     try {
       await FirebaseAppCheck.instance.activate(
         providerAndroid: kDebugMode
-            ? const AndroidDebugProvider()
+            ? AndroidDebugProvider(
+                debugToken: androidAppCheckDebugToken.isEmpty
+                    ? null
+                    : androidAppCheckDebugToken,
+              )
             : const AndroidPlayIntegrityProvider(),
         providerApple: kDebugMode
             ? const AppleDebugProvider()
@@ -100,16 +103,32 @@ class FirebaseBootstrap {
       final user = auth.currentUser;
       if (user == null) {
         await auth.signInAnonymously();
-        return;
-      }
-      await user.reload();
-      if (auth.currentUser == null) {
-        await auth.signInAnonymously();
+      } else {
+        await user.reload();
+        if (auth.currentUser == null) {
+          await auth.signInAnonymously();
+        }
       }
     } catch (e) {
       if (!_isDeletedOrInvalidUser(e)) rethrow;
       await auth.signOut();
       await auth.signInAnonymously();
+    }
+
+    await _setAnalyticsUserId(auth.currentUser?.uid);
+  }
+
+  static Future<void> _setAnalyticsUserId(String? uid) async {
+    try {
+      await _analytics?.setUserId(id: uid);
+      await _analytics?.setUserProperty(name: 'auth_uid', value: uid);
+      if (kDebugMode) {
+        print('Analytics userId set to $uid');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Analytics setUserId failed: $e');
+      }
     }
   }
 
@@ -128,17 +147,4 @@ class FirebaseBootstrap {
         text.contains('invalid-user-token');
   }
 
-  static void runGuarded(VoidCallback runApp) {
-    if (!isSupported) {
-      runApp();
-      return;
-    }
-
-    runZonedGuarded(
-      runApp,
-      (error, stack) {
-        _crashlytics?.recordError(error, stack, fatal: true);
-      },
-    );
-  }
 }

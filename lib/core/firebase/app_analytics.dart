@@ -1,4 +1,5 @@
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import 'firebase_bootstrap.dart';
@@ -76,6 +77,14 @@ class AppAnalytics {
   ) async {
     final analytics = _analytics;
     if (analytics == null) return;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      parameters = {...parameters, 'auth_uid': uid};
+    }
+    if (kDebugMode) {
+      print('Analytics $name auth_uid=${uid ?? "(none)"} $parameters');
+    }
 
     try {
       await analytics.logEvent(name: name, parameters: parameters);

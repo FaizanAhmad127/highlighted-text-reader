@@ -9,10 +9,7 @@ import 'presentation/pages/onboarding/onboarding_page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await FirebaseBootstrap.initialize();
-
-  FirebaseBootstrap.runGuarded(() {
-    runApp(const MyApp());
-  });
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {

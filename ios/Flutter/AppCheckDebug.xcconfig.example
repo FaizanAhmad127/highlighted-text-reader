@@ -1,0 +1,2 @@
+// Copy to AppCheckDebug.xcconfig and paste your registered debug token.
+APP_CHECK_DEBUG_TOKEN = YOUR-APP-CHECK-DEBUG-TOKEN

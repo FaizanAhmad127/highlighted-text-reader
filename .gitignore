@@ -47,3 +47,5 @@ app.*.map.json
 
 # Ignore secrets file
 lib/secrets/secrets.dart
+lib/secrets/app_check_debug.dart
+ios/Flutter/AppCheckDebug.xcconfig
