@@ -15,6 +15,9 @@ class ImageCaptureSection extends StatelessWidget {
     required this.compact,
     required this.onGallery,
     required this.onCamera,
+    this.scansUsed,
+    this.scansMax,
+    this.onRequestExtraQuota,
   });
 
   final File? image;
@@ -24,6 +27,9 @@ class ImageCaptureSection extends StatelessWidget {
   final bool compact;
   final VoidCallback onGallery;
   final VoidCallback onCamera;
+  final int? scansUsed;
+  final int? scansMax;
+  final VoidCallback? onRequestExtraQuota;
 
   @override
   Widget build(BuildContext context) {
@@ -103,9 +109,73 @@ class ImageCaptureSection extends StatelessWidget {
               ),
             ),
           ],
+          if (scansUsed != null && scansMax != null) ...[
+            const SizedBox(height: 10),
+            _QuotaLabel(
+              used: scansUsed!,
+              max: scansMax!,
+              onRequestExtraQuota: onRequestExtraQuota,
+            ),
+          ],
         ],
       ),
     );
+  }
+}
+
+class _QuotaLabel extends StatelessWidget {
+  const _QuotaLabel({
+    required this.used,
+    required this.max,
+    this.onRequestExtraQuota,
+  });
+
+  final int used;
+  final int max;
+  final VoidCallback? onRequestExtraQuota;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final atLimit = used >= max;
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: atLimit
+          ? theme.colorScheme.error
+          : theme.colorScheme.onSurfaceVariant,
+      fontWeight: FontWeight.w500,
+    );
+    final countLabel = '$used of $max scans today';
+
+    if (atLimit && onRequestExtraQuota != null) {
+      return Column(
+        children: [
+          Text(countLabel, textAlign: TextAlign.center, style: style),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onRequestExtraQuota,
+            icon: const Icon(Icons.mail_outline, size: 16),
+            label: const Text('Request extra'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+              side: BorderSide(
+                color: theme.colorScheme.error.withValues(alpha: 0.55),
+              ),
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              textStyle: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Text(countLabel, textAlign: TextAlign.center, style: style);
   }
 }
 

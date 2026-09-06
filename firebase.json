@@ -26,5 +26,11 @@
         }
       }
     }
-  }
+  },
+  "firestore": [
+    {
+      "database": "highlights",
+      "rules": "firestore.highlights.rules"
+    }
+  ]
 }

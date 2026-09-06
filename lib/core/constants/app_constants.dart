@@ -1,6 +1,7 @@
 class AppConstants {
   // App Info
   static const String appName = 'Highlighted Text Reader';
+  static const String supportEmail = 'khattakandcopk@gmail.com';
 
   static const int snackbarDurationSeconds = 3;
 

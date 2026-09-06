@@ -1,5 +1,12 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+class ScanQuotaUsage {
+  const ScanQuotaUsage({required this.used, required this.max});
+
+  final int used;
+  final int max;
+}
+
 class ScanRateLimitDecision {
   const ScanRateLimitDecision.allow()
       : allowed = true,
@@ -11,10 +18,17 @@ class ScanRateLimitDecision {
   final String? userMessage;
 }
 
+class ScanQuotaOverride {
+  const ScanQuotaOverride({this.maxOverride});
+
+  final int? maxOverride;
+}
+
 abstract class ScanQuotaStore {
   Future<String?> readDayKey();
   Future<int> readCount();
   Future<DateTime?> readLastAttempt();
+  Future<ScanQuotaOverride> readOverride() async => const ScanQuotaOverride();
   Future<void> write({
     required String dayKey,
     required int count,
@@ -26,6 +40,7 @@ class MemoryScanQuotaStore implements ScanQuotaStore {
   String? dayKey;
   int count = 0;
   DateTime? lastAt;
+  int? maxOverride;
 
   @override
   Future<String?> readDayKey() async => dayKey;
@@ -35,6 +50,11 @@ class MemoryScanQuotaStore implements ScanQuotaStore {
 
   @override
   Future<DateTime?> readLastAttempt() async => lastAt;
+
+  @override
+  Future<ScanQuotaOverride> readOverride() async => ScanQuotaOverride(
+        maxOverride: maxOverride,
+      );
 
   @override
   Future<void> write({
@@ -72,6 +92,9 @@ class SharedPrefsScanQuotaStore implements ScanQuotaStore {
   }
 
   @override
+  Future<ScanQuotaOverride> readOverride() async => const ScanQuotaOverride();
+
+  @override
   Future<void> write({
     required String dayKey,
     required int count,
@@ -84,42 +107,81 @@ class SharedPrefsScanQuotaStore implements ScanQuotaStore {
   }
 }
 
-/// Local daily cap and cooldown. Easy to bypass; Cloud quotas are the real limit.
+/// Daily cap plus cooldown. The count store can be local or Firestore.
 class ScanRateLimiter {
   ScanRateLimiter({
     ScanQuotaStore? store,
     DateTime Function()? clock,
-    this.maxScansPerDay = 20,
+    int maxScansPerDay = 20,
+    int Function()? maxScansPerDayReader,
     this.cooldown = const Duration(seconds: 8),
   })  : _store = store ?? SharedPrefsScanQuotaStore(),
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? DateTime.now,
+        _maxScansPerDay =
+            maxScansPerDayReader ?? (() => maxScansPerDay);
 
   static const cooldownMessage =
       'Wait a few seconds before scanning again.';
   static const dailyLimitMessage =
       "You've reached today's scan limit. Try again tomorrow.";
+  static const quotaUnavailableMessage =
+      "Couldn't check your scan limit. Try again.";
 
   final ScanQuotaStore _store;
   final DateTime Function() _clock;
-  final int maxScansPerDay;
+  final int Function() _maxScansPerDay;
   final Duration cooldown;
 
-  Future<ScanRateLimitDecision> check() async {
+  int get maxScansPerDay => _maxScansPerDay();
+
+  static int effectiveMax({
+    required int globalMax,
+    ScanQuotaOverride? override,
+  }) {
+    final maxOverride = override?.maxOverride;
+    return (maxOverride != null && maxOverride >= 1) ? maxOverride : globalMax;
+  }
+
+  Future<ScanQuotaUsage> usageToday() async {
     final now = _clock();
     final today = _dayKey(now);
     final storedDay = await _store.readDayKey();
     final count = storedDay == today ? await _store.readCount() : 0;
+    final cap = effectiveMax(
+      globalMax: maxScansPerDay,
+      override: await _store.readOverride(),
+    );
+    // A mid-day global cap drop must not show "3 of 2". Grandfather
+    // today's used count so the label stays consistent; check() still
+    // uses the real cap and blocks further scans.
+    final max = count > cap ? count : cap;
+    return ScanQuotaUsage(used: count, max: max);
+  }
 
-    if (count >= maxScansPerDay) {
-      return const ScanRateLimitDecision.block(dailyLimitMessage);
+  Future<ScanRateLimitDecision> check() async {
+    try {
+      final now = _clock();
+      final today = _dayKey(now);
+      final storedDay = await _store.readDayKey();
+      final count = storedDay == today ? await _store.readCount() : 0;
+      final max = effectiveMax(
+        globalMax: maxScansPerDay,
+        override: await _store.readOverride(),
+      );
+
+      if (count >= max) {
+        return const ScanRateLimitDecision.block(dailyLimitMessage);
+      }
+
+      final last = await _store.readLastAttempt();
+      if (last != null && now.difference(last) < cooldown) {
+        return const ScanRateLimitDecision.block(cooldownMessage);
+      }
+
+      return const ScanRateLimitDecision.allow();
+    } catch (_) {
+      return const ScanRateLimitDecision.block(quotaUnavailableMessage);
     }
-
-    final last = await _store.readLastAttempt();
-    if (last != null && now.difference(last) < cooldown) {
-      return const ScanRateLimitDecision.block(cooldownMessage);
-    }
-
-    return const ScanRateLimitDecision.allow();
   }
 
   Future<void> recordAttempt() async {

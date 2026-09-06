@@ -11,12 +11,17 @@ import 'core/firebase/app_crashlytics.dart';
 import 'core/firebase/firebase_bootstrap.dart';
 import 'core/utils/connectivity_helper.dart';
 import 'core/utils/ui_helpers.dart';
+import 'data/services/firestore_scan_limits_store.dart';
+import 'data/services/firestore_scan_quota_store.dart';
 import 'data/services/highlight_scan_service.dart';
 import 'data/services/meaning_language_store.dart';
+import 'data/services/quota_request_mailer.dart';
+import 'data/services/quota_request_prompt_store.dart';
 import 'data/services/scan_rate_limiter.dart';
 import 'domain/entities/highlight.dart';
 import 'domain/entities/meaning_language.dart';
 import 'presentation/widgets/highlight/expandable_highlight_card.dart';
+import 'presentation/widgets/home/extra_quota_dialog.dart';
 import 'presentation/widgets/home/image_capture_section.dart';
 import 'presentation/widgets/home/meaning_language_sheet.dart';
 
@@ -29,12 +34,17 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final HighlightScanService _scan = HighlightScanService();
-  final ScanRateLimiter _rateLimiter = ScanRateLimiter(
-    maxScansPerDay: AppConstants.maxScansPerDay,
+  final FirestoreScanQuotaStore _quotaStore = FirestoreScanQuotaStore();
+  final FirestoreScanLimitsStore _limitsStore = FirestoreScanLimitsStore();
+  late final ScanRateLimiter _rateLimiter = ScanRateLimiter(
+    store: _quotaStore,
+    maxScansPerDayReader: () => _limitsStore.maxScansPerDay,
     cooldown: AppConstants.scanCooldown,
   );
   final ImagePicker _picker = ImagePicker();
   final MeaningLanguageStore _languageStore = MeaningLanguageStore();
+  final QuotaRequestMailer _quotaMailer = QuotaRequestMailer();
+  final QuotaRequestPromptStore _quotaPromptStore = QuotaRequestPromptStore();
 
   File? _image;
   HighlightResponse? highlightResponse;
@@ -43,14 +53,19 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _offline = false;
   bool _skipNextConnectivityEvent = true;
   StreamSubscription<dynamic>? _connectivitySub;
+  StreamSubscription<void>? _quotaSub;
+  StreamSubscription<int>? _limitsSub;
   int? _expandedHighlightIndex;
   MeaningLanguage _meaningLanguage = MeaningLanguage.defaultLanguage;
+  int? _scansUsed;
+  int? _scansMax;
 
   @override
   void initState() {
     super.initState();
     _initConnectivity();
     _loadMeaningLanguage();
+    _loadQuotaUsage();
   }
 
   Future<void> _loadMeaningLanguage() async {
@@ -59,9 +74,55 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _meaningLanguage = language);
   }
 
+  Future<void> _loadQuotaUsage() async {
+    try {
+      await FirebaseBootstrap.ensureAnonymousUser();
+      try {
+        await _limitsStore.read();
+      } catch (_) {}
+      try {
+        await _quotaStore.ensureAdminPlaceholders();
+      } catch (_) {}
+      await _refreshQuotaUsage();
+      _listenQuotaDoc();
+      _listenLimitsDoc();
+    } catch (_) {}
+  }
+
+  void _listenQuotaDoc() {
+    _quotaSub?.cancel();
+    try {
+      _quotaSub = _quotaStore.snapshots().listen((_) {
+        unawaited(_refreshQuotaUsage());
+      });
+    } catch (_) {}
+  }
+
+  void _listenLimitsDoc() {
+    _limitsSub?.cancel();
+    try {
+      _limitsSub = _limitsStore.snapshots().listen((_) {
+        unawaited(_refreshQuotaUsage());
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _refreshQuotaUsage() async {
+    try {
+      final usage = await _rateLimiter.usageToday();
+      if (!mounted) return;
+      setState(() {
+        _scansUsed = usage.used;
+        _scansMax = usage.max;
+      });
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
     _connectivitySub?.cancel();
+    _quotaSub?.cancel();
+    _limitsSub?.cancel();
     super.dispose();
   }
 
@@ -85,7 +146,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _setupConnectivityListener() {
-    _connectivitySub = ConnectivityHelper.onConnectivityChanged.listen((results) {
+    _connectivitySub = ConnectivityHelper.onConnectivityChanged.listen((results) async {
       if (!mounted) return;
 
       // Replay of the current state after subscribe — not a real change.
@@ -94,7 +155,14 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      final nowOffline = ConnectivityHelper.isOffline(results);
+      // iOS NWPathMonitor often emits a spurious "none". Confirm before flipping UI.
+      var online = ConnectivityHelper.hasActiveInterface(results);
+      if (!online) {
+        online = await ConnectivityHelper.hasConnection();
+      }
+      if (!mounted) return;
+
+      final nowOffline = !online;
       final wasOffline = _offline;
       if (nowOffline == wasOffline) return;
 
@@ -113,6 +181,7 @@ class _HomeScreenState extends State<HomeScreen> {
           'Back online. You can scan a page now.',
           icon: Icons.wifi,
         );
+        unawaited(_refreshQuotaUsage());
       }
     });
   }
@@ -159,7 +228,6 @@ class _HomeScreenState extends State<HomeScreen> {
       isFetchingMeaning = true;
       _status = 'Preparing photo';
     });
-    unawaited(AppAnalytics.logScanStarted(offline: _offline));
     await _processImage();
   }
 
@@ -177,15 +245,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    if (!await _ensureCanScan()) {
-      if (!mounted) return;
-      setState(() {
-        isFetchingMeaning = false;
-        _status = null;
-      });
-      return;
-    }
-
     try {
       await FirebaseBootstrap.ensureAnonymousUser();
     } catch (e, st) {
@@ -195,7 +254,16 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    await _rateLimiter.recordAttempt();
+    if (!await _ensureCanScan()) {
+      if (!mounted) return;
+      setState(() {
+        isFetchingMeaning = false;
+        _status = null;
+      });
+      return;
+    }
+
+    unawaited(AppAnalytics.logScanStarted(offline: _offline));
 
     setState(() => isFetchingMeaning = true);
     await AppCrashlytics.setCustomKeys({
@@ -214,6 +282,12 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
       if (!mounted) return;
+      try {
+        await _rateLimiter.recordAttempt();
+        await _refreshQuotaUsage();
+      } catch (e, st) {
+        await AppCrashlytics.recordNonFatal(e, st, reason: 'scan_quota');
+      }
       final highlightCount = result.highlights?.length ?? 0;
       final found = result.found == true && highlightCount > 0;
       unawaited(
@@ -304,10 +378,55 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final reason = decision.userMessage == ScanRateLimiter.dailyLimitMessage
         ? 'daily_limit'
-        : 'cooldown';
+        : decision.userMessage == ScanRateLimiter.cooldownMessage
+            ? 'cooldown'
+            : 'scan_quota';
     unawaited(AppAnalytics.logScanFailed(reason: reason));
     UIHelpers.showSnackbar(context, decision.userMessage!);
+    if (reason == 'daily_limit') {
+      unawaited(_offerExtraQuota(force: false));
+    }
     return false;
+  }
+
+  String _todayKey() {
+    final now = DateTime.now();
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    return '${now.year}-$month-$day';
+  }
+
+  Future<void> _offerExtraQuota({required bool force}) async {
+    final today = _todayKey();
+    if (!force && !await _quotaPromptStore.shouldPrompt(today)) return;
+    if (!mounted) return;
+
+    await _quotaPromptStore.markPrompted(today);
+    final wantsExtra = await ExtraQuotaDialog.show(context);
+    if (wantsExtra != true || !mounted) return;
+    await _sendQuotaRequest();
+  }
+
+  Future<void> _sendQuotaRequest() async {
+    final result = await _quotaMailer.send();
+    if (!mounted) return;
+    switch (result.outcome) {
+      case QuotaRequestOutcome.mailed:
+        UIHelpers.showSnackbar(
+          context,
+          'Send the email to finish your extra-scan request.',
+        );
+      case QuotaRequestOutcome.copiedId:
+        UIHelpers.showSnackbar(
+          context,
+          'Could not open Mail. Support ID copied. Send it to ${AppConstants.supportEmail}.',
+        );
+      case QuotaRequestOutcome.couldNotSend:
+        UIHelpers.showSnackbar(
+          context,
+          'Could not start the request. Please try again later.',
+        );
+    }
   }
 
   void _fail(String message) {
@@ -353,6 +472,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   compact: found,
                   onGallery: () => _pickImage(ImageSource.gallery),
                   onCamera: () => _pickImage(ImageSource.camera),
+                  scansUsed: _scansUsed,
+                  scansMax: _scansMax,
+                  onRequestExtraQuota: () => unawaited(_offerExtraQuota(force: true)),
                 ),
                 const SizedBox(height: 12),
                 if (found)

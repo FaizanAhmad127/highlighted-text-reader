@@ -8,12 +8,17 @@ class ConnectivityHelper {
 
   static Future<bool> hasConnection() async {
     final results = await _connectivity.checkConnectivity();
-    return !results.contains(ConnectivityResult.none);
+    return hasActiveInterface(results);
   }
 
   static Stream<List<ConnectivityResult>> get onConnectivityChanged =>
       _connectivity.onConnectivityChanged;
 
+  /// iOS can include `none` alongside wifi/mobile. Any real interface means online.
+  static bool hasActiveInterface(List<ConnectivityResult> results) {
+    return results.any((result) => result != ConnectivityResult.none);
+  }
+
   static bool isOffline(List<ConnectivityResult> results) =>
-      results.contains(ConnectivityResult.none);
+      !hasActiveInterface(results);
 }
