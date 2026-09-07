@@ -6,9 +6,12 @@ import 'package:introduction_screen/introduction_screen.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/firebase/app_analytics.dart';
 import '../../../core/utils/ui_helpers.dart';
+import '../../../data/services/onboarding_store.dart';
 
 class OnboardingPage extends StatefulWidget {
-  const OnboardingPage({super.key});
+  const OnboardingPage({super.key, this.store});
+
+  final OnboardingStore? store;
 
   @override
   State<OnboardingPage> createState() => _OnboardingPageState();
@@ -16,6 +19,7 @@ class OnboardingPage extends StatefulWidget {
 
 class _OnboardingPageState extends State<OnboardingPage> {
   final _introKey = GlobalKey<IntroductionScreenState>();
+  late final OnboardingStore _store = widget.store ?? OnboardingStore();
 
   List<PageViewModel> get _pages => [
         PageViewModel(
@@ -76,12 +80,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
       ];
 
   void _onDone() {
-    unawaited(AppAnalytics.logOnboardingFinished(method: 'done'));
-    context.go(AppConstants.homeRoute);
+    unawaited(_finish(method: 'done'));
   }
 
   void _onSkip() {
-    unawaited(AppAnalytics.logOnboardingFinished(method: 'skip'));
+    unawaited(_finish(method: 'skip'));
+  }
+
+  Future<void> _finish({required String method}) async {
+    unawaited(AppAnalytics.logOnboardingFinished(method: method));
+    await _store.writeCompleted();
+    if (!mounted) return;
     context.go(AppConstants.homeRoute);
   }
 
