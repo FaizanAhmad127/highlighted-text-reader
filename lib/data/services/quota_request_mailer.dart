@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/firebase/app_crashlytics.dart';
 
 enum QuotaRequestOutcome { mailed, copiedId, couldNotSend }
 
@@ -27,7 +28,12 @@ class QuotaRequestMailer {
 
   String? _readUid() {
     if (_uidReader != null) return _uidReader();
-    return FirebaseAuth.instance.currentUser?.uid;
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } catch (e, st) {
+      AppCrashlytics.record(e, st, reason: 'quota_uid');
+      return null;
+    }
   }
 
   Future<bool> _launchMailto(Uri uri) => (_launch ?? _defaultLaunch)(uri);
@@ -59,10 +65,17 @@ class QuotaRequestMailer {
       if (await _launchMailto(uri)) {
         return QuotaRequestResult(QuotaRequestOutcome.mailed, uid: uid);
       }
-    } catch (_) {}
+    } catch (e, st) {
+      await AppCrashlytics.recordNonFatal(e, st, reason: 'quota_mailto');
+    }
 
-    await _copyUid(uid);
-    return QuotaRequestResult(QuotaRequestOutcome.copiedId, uid: uid);
+    try {
+      await _copyUid(uid);
+      return QuotaRequestResult(QuotaRequestOutcome.copiedId, uid: uid);
+    } catch (e, st) {
+      await AppCrashlytics.recordNonFatal(e, st, reason: 'quota_copy_uid');
+      return const QuotaRequestResult(QuotaRequestOutcome.couldNotSend);
+    }
   }
 
   static String _encodeQuery(Map<String, String> params) {

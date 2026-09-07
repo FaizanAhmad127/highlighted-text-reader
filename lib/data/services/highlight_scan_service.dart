@@ -25,8 +25,7 @@ class HighlightScanException implements Exception {
 class HighlightScanErrors {
   static const timedOut =
       'Could not read the page. The request timed out. Try again.';
-  static const quota =
-      'Too many scans right now. Wait a moment and try again.';
+  static const quota = 'Too many scans right now. Wait a moment and try again.';
   static const billing =
       'Scanning is paused right now. Please try again later.';
   static const unavailable =
@@ -102,14 +101,17 @@ class HighlightScanService {
       return await _gemini
           .analyze(compressed, meaningLanguage: meaningLanguage)
           .timeout(_geminiTimeout);
-    } on TimeoutException catch (e) {
+    } on TimeoutException catch (e, st) {
+      if (kDebugMode) {
+        print('Highlight scan timed out: $e\n$st');
+      }
       throw HighlightScanException(
         HighlightScanErrors.timedOut,
         cause: e,
       );
-    } catch (e) {
+    } catch (e, st) {
       if (kDebugMode) {
-        print('Highlight scan failed: $e');
+        print('Highlight scan failed: $e\n$st');
       }
       throw HighlightScanException(
         HighlightScanErrors.userMessage(e),

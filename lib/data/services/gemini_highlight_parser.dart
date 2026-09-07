@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../core/firebase/app_crashlytics.dart';
 import '../../domain/entities/highlight.dart';
 
 class GeminiHighlightParser {
@@ -38,7 +39,8 @@ class GeminiHighlightParser {
         found: highlights.isNotEmpty,
         highlights: highlights,
       );
-    } catch (_) {
+    } catch (e, st) {
+      AppCrashlytics.record(e, st, reason: 'gemini_parse');
       return const HighlightResponse(found: false, highlights: []);
     }
   }

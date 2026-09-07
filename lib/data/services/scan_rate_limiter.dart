@@ -1,5 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/firebase/app_crashlytics.dart';
+
 class ScanQuotaUsage {
   const ScanQuotaUsage({required this.used, required this.max});
 
@@ -117,11 +119,9 @@ class ScanRateLimiter {
     this.cooldown = const Duration(seconds: 8),
   })  : _store = store ?? SharedPrefsScanQuotaStore(),
         _clock = clock ?? DateTime.now,
-        _maxScansPerDay =
-            maxScansPerDayReader ?? (() => maxScansPerDay);
+        _maxScansPerDay = maxScansPerDayReader ?? (() => maxScansPerDay);
 
-  static const cooldownMessage =
-      'Wait a few seconds before scanning again.';
+  static const cooldownMessage = 'Wait a few seconds before scanning again.';
   static const dailyLimitMessage =
       "You've reached today's scan limit. Try again tomorrow.";
   static const quotaUnavailableMessage =
@@ -134,12 +134,16 @@ class ScanRateLimiter {
 
   int get maxScansPerDay => _maxScansPerDay();
 
+  /// Per-user override only raises the daily cap.
+  /// When [maxOverride] >= 1: `max(globalMax, maxOverride)`.
+  /// When override is 0, null, or missing: [globalMax].
   static int effectiveMax({
     required int globalMax,
     ScanQuotaOverride? override,
   }) {
     final maxOverride = override?.maxOverride;
-    return (maxOverride != null && maxOverride >= 1) ? maxOverride : globalMax;
+    if (maxOverride == null || maxOverride < 1) return globalMax;
+    return maxOverride > globalMax ? maxOverride : globalMax;
   }
 
   Future<ScanQuotaUsage> usageToday() async {
@@ -179,7 +183,8 @@ class ScanRateLimiter {
       }
 
       return const ScanRateLimitDecision.allow();
-    } catch (_) {
+    } catch (e, st) {
+      await AppCrashlytics.recordNonFatal(e, st, reason: 'scan_quota_check');
       return const ScanRateLimitDecision.block(quotaUnavailableMessage);
     }
   }

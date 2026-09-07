@@ -117,11 +117,44 @@ void main() {
   });
 
   test('override only raises the daily cap', () async {
+    expect(
+      ScanRateLimiter.effectiveMax(
+        globalMax: 20,
+        override: const ScanQuotaOverride(maxOverride: 5),
+      ),
+      20,
+    );
+    expect(
+      ScanRateLimiter.effectiveMax(
+        globalMax: 20,
+        override: const ScanQuotaOverride(maxOverride: 50),
+      ),
+      50,
+    );
+    expect(
+      ScanRateLimiter.effectiveMax(
+        globalMax: 20,
+        override: const ScanQuotaOverride(maxOverride: 0),
+      ),
+      20,
+    );
+    expect(ScanRateLimiter.effectiveMax(globalMax: 20), 20);
+
+    store
+      ..count = 5
+      ..dayKey = '2026-09-05'
+      ..maxOverride = 5;
+    expect((await limiter.check()).allowed, isTrue);
+
+    store.count = 19;
+    expect((await limiter.check()).allowed, isTrue);
+
+    store.count = 20;
+    expect((await limiter.check()).allowed, isFalse);
+
     store
       ..count = 20
-      ..dayKey = '2026-09-05'
       ..maxOverride = 50;
-
     expect((await limiter.check()).allowed, isTrue);
 
     store.count = 50;
@@ -180,6 +213,10 @@ void main() {
 
     expect(usage.used, 3);
     expect(usage.max, 50);
+
+    store.maxOverride = 5;
+    final ignored = await limiter.usageToday();
+    expect(ignored.max, 20);
   });
 
   test('blocks when the quota store cannot be read', () async {

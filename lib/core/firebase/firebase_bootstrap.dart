@@ -6,6 +6,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../firebase_options.dart';
+import 'saved_highlights_identity.dart';
 import '../../secrets/app_check_debug.dart';
 
 /// Initializes Firebase and wires global crash reporting for mobile builds.
@@ -61,14 +62,18 @@ class FirebaseBootstrap {
               )
             : const AndroidPlayIntegrityProvider(),
         providerApple: kDebugMode
-            ? const AppleDebugProvider()
+            ? AppleDebugProvider(
+                debugToken: iosAppCheckDebugToken.isEmpty
+                    ? null
+                    : iosAppCheckDebugToken,
+              )
             : const AppleDeviceCheckProvider(),
       );
     } catch (e, st) {
       if (kDebugMode) {
         print('Firebase App Check activation failed: $e\n$st');
       }
-      await _crashlytics?.recordError(e, st, fatal: false);
+      await _crashlytics?.recordError(e, st, reason: 'app_check', fatal: false);
     }
 
     try {
@@ -77,7 +82,12 @@ class FirebaseBootstrap {
       if (kDebugMode) {
         print('Anonymous auth failed: $e\n$st');
       }
-      await _crashlytics?.recordError(e, st, fatal: false);
+      await _crashlytics?.recordError(
+        e,
+        st,
+        reason: 'anonymous_auth',
+        fatal: false,
+      );
     }
 
     await _crashlytics!.setCrashlyticsCollectionEnabled(!kDebugMode);
@@ -99,6 +109,7 @@ class FirebaseBootstrap {
     if (!isSupported) return;
 
     final auth = FirebaseAuth.instance;
+    SavedHighlightsIdentity.capture(auth.currentUser?.uid);
     try {
       final user = auth.currentUser;
       if (user == null) {
@@ -109,8 +120,17 @@ class FirebaseBootstrap {
           await auth.signInAnonymously();
         }
       }
-    } catch (e) {
+    } catch (e, st) {
       if (!_isDeletedOrInvalidUser(e)) rethrow;
+      if (kDebugMode) {
+        print('Anonymous auth recovering deleted user: $e\n$st');
+      }
+      await _crashlytics?.recordError(
+        e,
+        st,
+        reason: 'anonymous_auth_recover',
+        fatal: false,
+      );
       await auth.signOut();
       await auth.signInAnonymously();
     }
@@ -125,10 +145,16 @@ class FirebaseBootstrap {
       if (kDebugMode) {
         print('Analytics userId set to $uid');
       }
-    } catch (e) {
+    } catch (e, st) {
       if (kDebugMode) {
-        print('Analytics setUserId failed: $e');
+        print('Analytics setUserId failed: $e\n$st');
       }
+      await _crashlytics?.recordError(
+        e,
+        st,
+        reason: 'analytics_user_id',
+        fatal: false,
+      );
     }
   }
 
@@ -146,5 +172,4 @@ class FirebaseBootstrap {
         text.contains('user-token-expired') ||
         text.contains('invalid-user-token');
   }
-
 }

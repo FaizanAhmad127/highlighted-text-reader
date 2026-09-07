@@ -1328,7 +1328,7 @@ PODS:
     - PromisesSwift (~> 2.1)
   - FirebaseSharedSwift (12.18.0)
   - Flutter (1.0.0)
-  - flutter_keyboard_visibility (0.0.1):
+  - flutter_keyboard_visibility_temp_fork (0.0.1):
     - Flutter
   - GoogleAdsOnDeviceConversion (3.6.1):
     - GoogleUtilities/Environment (~> 8.1)
@@ -1508,7 +1508,7 @@ DEPENDENCIES:
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
   - firebase_crashlytics (from `.symlinks/plugins/firebase_crashlytics/ios`)
   - Flutter (from `Flutter`)
-  - flutter_keyboard_visibility (from `.symlinks/plugins/flutter_keyboard_visibility/ios`)
+  - flutter_keyboard_visibility_temp_fork (from `.symlinks/plugins/flutter_keyboard_visibility_temp_fork/ios`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
@@ -1566,8 +1566,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/firebase_crashlytics/ios"
   Flutter:
     :path: Flutter
-  flutter_keyboard_visibility:
-    :path: ".symlinks/plugins/flutter_keyboard_visibility/ios"
+  flutter_keyboard_visibility_temp_fork:
+    :path: ".symlinks/plugins/flutter_keyboard_visibility_temp_fork/ios"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
   shared_preferences_foundation:
@@ -1604,7 +1604,7 @@ SPEC CHECKSUMS:
   FirebaseSessions: 3eaac5fd8077513b95f9723efd940438e3e35fb2
   FirebaseSharedSwift: 9d9404eea60b650d3e549898bfebbb8f665fe601
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  flutter_keyboard_visibility: 4625131e43015dbbe759d9b20daaf77e0e3f6619
+  flutter_keyboard_visibility_temp_fork: 95b2d534bacf6ac62e7fcbe5c2a9e2c2a17ce06f
   GoogleAdsOnDeviceConversion: e3b71da24ff4cf01cf520756ac1c2b93c07b86ff
   GoogleAppMeasurement: d70df385587c4175fc0836c11e413d5cbcaa3c7b
   GoogleDataTransport: a24e58982ab3ba2f64d79613e027fe7f57e88539

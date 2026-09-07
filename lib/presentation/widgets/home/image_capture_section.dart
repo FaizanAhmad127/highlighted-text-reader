@@ -13,6 +13,7 @@ class ImageCaptureSection extends StatelessWidget {
     this.status,
     required this.offline,
     required this.compact,
+    required this.quotaReady,
     required this.onGallery,
     required this.onCamera,
     this.scansUsed,
@@ -20,16 +21,21 @@ class ImageCaptureSection extends StatelessWidget {
     this.onRequestExtraQuota,
   });
 
+  static const quotaLoadingMessage = 'Please wait, loading assets';
+
   final File? image;
   final bool isProcessing;
   final String? status;
   final bool offline;
   final bool compact;
+  final bool quotaReady;
   final VoidCallback onGallery;
   final VoidCallback onCamera;
   final int? scansUsed;
   final int? scansMax;
   final VoidCallback? onRequestExtraQuota;
+
+  bool get _captureEnabled => quotaReady && !offline && !isProcessing;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +53,11 @@ class ImageCaptureSection extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: _OfflineBanner(theme: theme),
+            ),
+          if (!quotaReady)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _QuotaLoadingBanner(theme: theme),
             ),
           Material(
             color: theme.colorScheme.surfaceContainerHighest,
@@ -79,7 +90,7 @@ class ImageCaptureSection extends StatelessWidget {
                         child: _CaptureActionButton(
                           label: 'Gallery',
                           icon: Icons.photo_library_outlined,
-                          onPressed: offline || isProcessing ? null : onGallery,
+                          onPressed: _captureEnabled ? onGallery : null,
                           filled: false,
                         ),
                       ),
@@ -88,7 +99,7 @@ class ImageCaptureSection extends StatelessWidget {
                         child: _CaptureActionButton(
                           label: 'Camera',
                           icon: Icons.camera_alt_outlined,
-                          onPressed: offline || isProcessing ? null : onCamera,
+                          onPressed: _captureEnabled ? onCamera : null,
                           filled: true,
                         ),
                       ),
@@ -176,6 +187,45 @@ class _QuotaLabel extends StatelessWidget {
     }
 
     return Text(countLabel, textAlign: TextAlign.center, style: style);
+  }
+}
+
+class _QuotaLoadingBanner extends StatelessWidget {
+  const _QuotaLoadingBanner({required this.theme});
+
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: theme.colorScheme.onPrimaryContainer,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              ImageCaptureSection.quotaLoadingMessage,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
