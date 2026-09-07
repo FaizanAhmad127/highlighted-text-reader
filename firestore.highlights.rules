@@ -24,7 +24,14 @@ service cloud.firestore {
     // Clients may read. Writes are Console / Admin SDK only.
     //
     // Daily max is enforced in the app from settings/scan_limits.
-    // No other collections exist in this database.
+    //
+    // Collection: saved_highlights/{userId}/items/{itemId}
+    // Fields:
+    //   - text, literal, contextual, color: string
+    //   - meaningLanguageId: string
+    //   - savedAt: timestamp
+    //   - scanId: string (optional) - groups highlights from one scan
+    // Ownership is the userId path segment. Clients may CRUD their own items.
     //
     // ===============================================================
     // Helper Functions
@@ -151,6 +158,57 @@ service cloud.firestore {
     match /settings/{documentId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if false;
+    }
+
+    function isNonEmptyString(value, maxSize) {
+      return value is string &&
+        value.size() > 0 &&
+        value.size() <= maxSize;
+    }
+
+    function isValidOptionalScanId(data) {
+      return !('scanId' in data) ||
+        (data.scanId is string &&
+          data.scanId.size() > 0 &&
+          data.scanId.size() <= 64);
+    }
+
+    function isValidSavedHighlight(data) {
+      return hasRequiredFields([
+          'text',
+          'literal',
+          'contextual',
+          'color',
+          'meaningLanguageId',
+          'savedAt'
+        ]) &&
+        hasOnlyAllowedFields([
+          'text',
+          'literal',
+          'contextual',
+          'color',
+          'meaningLanguageId',
+          'savedAt',
+          'scanId'
+        ]) &&
+        isNonEmptyString(data.text, 5000) &&
+        data.literal is string &&
+        data.literal.size() <= 5000 &&
+        data.contextual is string &&
+        data.contextual.size() <= 5000 &&
+        isNonEmptyString(data.color, 32) &&
+        isNonEmptyString(data.meaningLanguageId, 16) &&
+        data.savedAt is timestamp &&
+        isValidOptionalScanId(data);
+    }
+
+    match /saved_highlights/{userId}/items/{itemId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        isValidSavedHighlight(request.resource.data);
+      allow update: if isOwner(userId) &&
+        isValidSavedHighlight(request.resource.data);
+      allow delete: if isOwner(userId);
     }
   }
 }

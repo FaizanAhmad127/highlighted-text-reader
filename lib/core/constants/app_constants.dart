@@ -8,6 +8,7 @@ class AppConstants {
   // Routes
   static const String homeRoute = '/home';
   static const String onboardRoute = '/on-board';
+  static const String savedRoute = '/saved';
 
   // Onboarding Assets
   static const String onboard1Asset = 'assets/onboard1.png';

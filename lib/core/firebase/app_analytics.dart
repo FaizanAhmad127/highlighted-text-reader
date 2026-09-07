@@ -2,14 +2,21 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'app_crashlytics.dart';
 import 'firebase_bootstrap.dart';
 
 /// Central analytics events for the app. No PII is logged.
 class AppAnalytics {
   AppAnalytics._();
 
-  static FirebaseAnalytics? get _analytics =>
-      FirebaseBootstrap.isSupported ? FirebaseBootstrap.analytics : null;
+  static FirebaseAnalytics? get _analytics {
+    if (!FirebaseBootstrap.isSupported) return null;
+    try {
+      return FirebaseBootstrap.analytics;
+    } catch (_) {
+      return null;
+    }
+  }
 
   static Future<void> logOnboardingFinished({required String method}) {
     return _logEvent(
@@ -64,6 +71,27 @@ class AppAnalytics {
     );
   }
 
+  static Future<void> logHighlightSaved({
+    required int count,
+    required String method,
+  }) {
+    return _logEvent(
+      'highlight_saved',
+      {
+        'count': count,
+        'method': method,
+      },
+    );
+  }
+
+  static Future<void> logSavedOpened() {
+    return _logEvent('saved_opened', {});
+  }
+
+  static Future<void> logSavedDeleted() {
+    return _logEvent('saved_deleted', {});
+  }
+
   static Future<void> logConnectivityChanged({required bool offline}) {
     return _logEvent(
       'connectivity_changed',
@@ -92,6 +120,7 @@ class AppAnalytics {
       if (kDebugMode) {
         print('Analytics event failed ($name): $e\n$st');
       }
+      await AppCrashlytics.recordNonFatal(e, st, reason: 'analytics_log');
     }
   }
 }
