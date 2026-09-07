@@ -165,6 +165,30 @@ class FirestoreSavedHighlightsStore implements SavedHighlightsStore {
   }
 
   @override
+  Future<SavedHighlightsWriteResult> importAll(
+    List<SavedHighlight> items,
+  ) async {
+    final existing = await current();
+    var savedCount = 0;
+    for (final item in items) {
+      if (_isDuplicate(existing, item.highlight, item.meaningLanguageId)) {
+        continue;
+      }
+      final next = SavedHighlight(
+        id: _idGenerator(),
+        highlight: item.highlight,
+        meaningLanguageId: item.meaningLanguageId,
+        savedAt: item.savedAt,
+        scanId: item.scanId,
+      );
+      await put(next);
+      existing.add(next);
+      savedCount++;
+    }
+    return SavedHighlightsWriteResult(savedCount: savedCount);
+  }
+
+  @override
   Future<void> delete(String id) async {
     await _items(_requireUid()).doc(id).delete();
   }

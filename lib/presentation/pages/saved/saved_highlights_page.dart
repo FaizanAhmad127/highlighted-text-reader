@@ -1,9 +1,13 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/firebase/app_analytics.dart';
 import '../../../core/firebase/app_crashlytics.dart';
+import '../../../core/utils/connectivity_helper.dart';
+import '../../../core/utils/ui_helpers.dart';
+import '../../../data/services/highlight_transfer_service.dart';
 import '../../../data/services/hybrid_saved_highlights_repository.dart';
 import '../../../data/services/saved_highlights_query.dart';
 import '../../../data/services/saved_highlights_store.dart';
@@ -11,6 +15,8 @@ import '../../../data/services/swipe_delete_hint_store.dart';
 import '../../../domain/entities/meaning_language.dart';
 import '../../../domain/entities/saved_highlight.dart';
 import '../../widgets/highlight/expandable_highlight_card.dart';
+import 'highlight_qr_scanner_page.dart';
+import 'highlight_transfer_qr_dialog.dart';
 
 class SavedHighlightsPage extends StatefulWidget {
   const SavedHighlightsPage({
@@ -19,12 +25,20 @@ class SavedHighlightsPage extends StatefulWidget {
     this.clock,
     this.pickDate,
     this.swipeHintStore,
+    this.transferService,
+    this.hasConnection,
+    this.isSignedIn,
+    this.scanQr,
   });
 
   final SavedHighlightsStore? store;
   final DateTime Function()? clock;
   final Future<DateTime?> Function(BuildContext context)? pickDate;
   final SwipeDeleteHintStore? swipeHintStore;
+  final HighlightTransferService? transferService;
+  final Future<bool> Function()? hasConnection;
+  final bool Function()? isSignedIn;
+  final Future<String?> Function(BuildContext context)? scanQr;
 
   @override
   State<SavedHighlightsPage> createState() => _SavedHighlightsPageState();
@@ -92,6 +106,111 @@ class _SavedHighlightsPageState extends State<SavedHighlightsPage> {
   Future<void> _delete(SavedHighlight item) async {
     await _store.delete(item.id);
     unawaited(AppAnalytics.logSavedDeleted());
+  }
+
+  HighlightTransferService get _transfers =>
+      widget.transferService ?? HighlightTransferService();
+
+  bool _defaultSignedIn() {
+    try {
+      return FirebaseAuth.instance.currentUser != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _onlineAndSignedIn() async {
+    final signedIn = widget.isSignedIn?.call() ?? _defaultSignedIn();
+    if (!signedIn) {
+      UIHelpers.showSnackbar(context, 'Sign in failed. Try again in a moment.');
+      return false;
+    }
+    final online =
+        await (widget.hasConnection ?? ConnectivityHelper.hasConnection)();
+    if (!online) {
+      if (!mounted) return false;
+      UIHelpers.showSnackbar(context, 'Connect to the internet to transfer highlights.');
+      return false;
+    }
+    return true;
+  }
+
+  String _transferErrorMessage(HighlightTransferError error) {
+    switch (error) {
+      case HighlightTransferError.empty:
+        return 'Save a highlight before sharing.';
+      case HighlightTransferError.tooLarge:
+        return 'Too many highlights to share at once.';
+      case HighlightTransferError.notFound:
+        return 'That QR code was not found.';
+      case HighlightTransferError.expired:
+        return 'That QR code has expired.';
+      case HighlightTransferError.invalidQr:
+        return 'That QR code is not a highlight transfer.';
+    }
+  }
+
+  Future<void> _shareViaQr() async {
+    if (!await _onlineAndSignedIn()) return;
+    try {
+      final session = await _transfers.create(_items);
+      unawaited(
+        AppAnalytics.logHighlightTransferCreated(count: session.itemCount),
+      );
+      if (!mounted) return;
+      await showHighlightTransferQrDialog(context, session: session);
+    } on HighlightTransferException catch (e) {
+      if (!mounted) return;
+      UIHelpers.showSnackbar(context, _transferErrorMessage(e.error));
+    } catch (e, st) {
+      AppCrashlytics.record(e, st, reason: 'highlight_transfer_create');
+      if (!mounted) return;
+      UIHelpers.showSnackbar(context, 'Could not create a share code.');
+    }
+  }
+
+  Future<void> _importViaQr() async {
+    if (!await _onlineAndSignedIn()) return;
+    if (!mounted) return;
+    final raw = widget.scanQr != null
+        ? await widget.scanQr!(context)
+        : await Navigator.of(context).push<String>(
+            MaterialPageRoute(builder: (_) => const HighlightQrScannerPage()),
+          );
+    if (!mounted || raw == null || raw.isEmpty) return;
+    try {
+      final incoming = await _transfers.fetchFromQr(raw);
+      final result = await _store.importAll(incoming);
+      unawaited(
+        AppAnalytics.logHighlightTransferImported(
+          importedCount: result.savedCount,
+          skippedCount: incoming.length - result.savedCount,
+        ),
+      );
+      if (!mounted) return;
+      if (result.savedCount == 0) {
+        UIHelpers.showSnackbar(
+          context,
+          incoming.length == 1
+              ? 'Already saved.'
+              : 'All ${incoming.length} were already saved.',
+        );
+      } else {
+        UIHelpers.showSnackbar(
+          context,
+          result.savedCount == 1
+              ? 'Added 1 highlight.'
+              : 'Added ${result.savedCount} highlights.',
+        );
+      }
+    } on HighlightTransferException catch (e) {
+      if (!mounted) return;
+      UIHelpers.showSnackbar(context, _transferErrorMessage(e.error));
+    } catch (e, st) {
+      AppCrashlytics.record(e, st, reason: 'highlight_transfer_import');
+      if (!mounted) return;
+      UIHelpers.showSnackbar(context, 'Could not import highlights.');
+    }
   }
 
   Future<void> _pickCustomDate() async {
@@ -183,6 +302,29 @@ class _SavedHighlightsPageState extends State<SavedHighlightsPage> {
         title: const Text('Saved highlights'),
         elevation: 0,
         scrolledUnderElevation: 1,
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Transfer highlights',
+            onSelected: (value) {
+              if (value == 'share') {
+                unawaited(_shareViaQr());
+              } else if (value == 'import') {
+                unawaited(_importViaQr());
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'share',
+                enabled: _items.isNotEmpty,
+                child: const Text('Share via QR'),
+              ),
+              const PopupMenuItem(
+                value: 'import',
+                child: Text('Import via QR'),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -362,6 +362,43 @@ class HybridSavedHighlightsRepository implements SavedHighlightsStore {
   }
 
   @override
+  Future<SavedHighlightsWriteResult> importAll(
+    List<SavedHighlight> items,
+  ) async {
+    await _ensureStarted();
+    final prepared = <SavedHighlight>[];
+    for (final item in items) {
+      if (_isDuplicate(item.highlight, item.meaningLanguageId)) continue;
+      final next = SavedHighlight(
+        id: _idGenerator(),
+        highlight: item.highlight,
+        meaningLanguageId: item.meaningLanguageId,
+        savedAt: item.savedAt,
+        scanId: item.scanId,
+      );
+      _items = [..._items, next];
+      prepared.add(next);
+    }
+    if (prepared.isEmpty) {
+      return const SavedHighlightsWriteResult(savedCount: 0);
+    }
+    await _cache.writeForUid(_boundUid, _items);
+    _emit();
+
+    var pendingSync = !_canSync;
+    if (_canSync) {
+      for (final item in prepared) {
+        final uploaded = await _putRemoteWithRetry(_remote!, item);
+        if (!uploaded) pendingSync = true;
+      }
+    }
+    return SavedHighlightsWriteResult(
+      savedCount: prepared.length,
+      pendingSync: pendingSync,
+    );
+  }
+
+  @override
   Future<void> delete(String id) async {
     await _ensureStarted();
     _items = _items.where((item) => item.id != id).toList();

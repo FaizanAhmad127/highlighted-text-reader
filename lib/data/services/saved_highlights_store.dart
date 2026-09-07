@@ -27,6 +27,7 @@ abstract class SavedHighlightsStore {
     required String meaningLanguageId,
     String? scanId,
   });
+  Future<SavedHighlightsWriteResult> importAll(List<SavedHighlight> items);
   Future<void> delete(String id);
   Future<bool> isSaved(
     Highlight highlight, {
@@ -121,6 +122,27 @@ class MemorySavedHighlightsStore implements SavedHighlightsStore {
         scanId: scanId,
       );
       savedCount += result.savedCount;
+    }
+    return SavedHighlightsWriteResult(savedCount: savedCount);
+  }
+
+  @override
+  Future<SavedHighlightsWriteResult> importAll(
+    List<SavedHighlight> items,
+  ) async {
+    var savedCount = 0;
+    for (final item in items) {
+      if (_isDuplicate(item.highlight, item.meaningLanguageId)) continue;
+      await put(
+        SavedHighlight(
+          id: _idGenerator(),
+          highlight: item.highlight,
+          meaningLanguageId: item.meaningLanguageId,
+          savedAt: item.savedAt,
+          scanId: item.scanId,
+        ),
+      );
+      savedCount++;
     }
     return SavedHighlightsWriteResult(savedCount: savedCount);
   }

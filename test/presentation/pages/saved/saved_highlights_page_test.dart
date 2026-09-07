@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:highlighted_text_reader/data/services/highlight_transfer_service.dart';
 import 'package:highlighted_text_reader/data/services/saved_highlights_store.dart';
 import 'package:highlighted_text_reader/data/services/swipe_delete_hint_store.dart';
 import 'package:highlighted_text_reader/domain/entities/highlight.dart';
 import 'package:highlighted_text_reader/domain/entities/saved_highlight.dart';
 import 'package:highlighted_text_reader/presentation/pages/saved/saved_highlights_page.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 void main() {
   late MemorySavedHighlightsStore store;
@@ -40,6 +42,10 @@ void main() {
     WidgetTester tester, {
     Future<DateTime?> Function(BuildContext context)? pickDate,
     SwipeDeleteHintStore? swipeHintStore,
+    HighlightTransferService? transferService,
+    Future<bool> Function()? hasConnection,
+    bool Function()? isSignedIn,
+    Future<String?> Function(BuildContext context)? scanQr,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -48,6 +54,10 @@ void main() {
           clock: () => DateTime(2026, 9, 7, 16, 0),
           pickDate: pickDate,
           swipeHintStore: swipeHintStore,
+          transferService: transferService,
+          hasConnection: hasConnection ?? () async => true,
+          isSignedIn: isSignedIn ?? () => true,
+          scanQr: scanQr,
         ),
       ),
     );
@@ -319,5 +329,76 @@ void main() {
 
     expect(find.text('No highlights match these filters'), findsOneWidget);
     expect(find.text('No saved highlights yet'), findsNothing);
+  });
+
+  testWidgets('disables Share via QR when the library is empty', (tester) async {
+    await pumpPage(tester);
+    await tester.tap(find.byTooltip('Transfer highlights'));
+    await tester.pumpAndSettle();
+
+    final share = tester.widget<PopupMenuItem<String>>(
+      find.widgetWithText(PopupMenuItem<String>, 'Share via QR'),
+    );
+    expect(share.enabled, isFalse);
+    expect(find.text('Import via QR'), findsOneWidget);
+  });
+
+  testWidgets('Share via QR shows a code for the current library', (
+    tester,
+  ) async {
+    await store.put(
+      SavedHighlight(
+        id: '1',
+        highlight: serendipity,
+        meaningLanguageId: 'en',
+        savedAt: DateTime(2026, 9, 7, 15, 0),
+      ),
+    );
+    final transfers = HighlightTransferService(
+      store: MemoryHighlightTransferStore(),
+      currentUid: () => 'uid-a',
+      clock: () => DateTime.utc(2026, 9, 7, 16),
+      idGenerator: () => 'Abcdefghij0123456789-_',
+    );
+
+    await pumpPage(tester, transferService: transfers);
+    await tester.tap(find.byTooltip('Transfer highlights'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Share via QR'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(QrImageView), findsOneWidget);
+    expect(find.textContaining('Valid for 30 minutes'), findsOneWidget);
+  });
+
+  testWidgets('Import via QR merges highlights from a transfer', (tester) async {
+    final transfers = HighlightTransferService(
+      store: MemoryHighlightTransferStore(),
+      currentUid: () => 'uid-a',
+      clock: () => DateTime.utc(2026, 9, 7, 16),
+      idGenerator: () => 'Abcdefghij0123456789-_',
+    );
+    await transfers.create([
+      SavedHighlight(
+        id: 'src-1',
+        highlight: eloquent,
+        meaningLanguageId: 'en',
+        savedAt: DateTime.utc(2026, 8, 1),
+      ),
+    ]);
+
+    await pumpPage(
+      tester,
+      transferService: transfers,
+      scanQr: (_) async => 'htr1:Abcdefghij0123456789-_',
+    );
+    await tester.tap(find.byTooltip('Transfer highlights'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Import via QR'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Added 1 highlight.'), findsOneWidget);
+    expect(await store.current(), hasLength(1));
+    expect((await store.current()).single.text, 'eloquent');
   });
 }

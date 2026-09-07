@@ -90,6 +90,48 @@ void main() {
       expect(items.every((item) => item.scanId == 'scan-9'), isTrue);
     });
 
+    test('importAll assigns new ids and keeps language and savedAt', () async {
+      final incoming = SavedHighlight(
+        id: 'source-1',
+        highlight: phrase,
+        meaningLanguageId: 'ur',
+        savedAt: DateTime.utc(2026, 8, 1, 9, 30),
+        scanId: 'scan-src',
+      );
+
+      final result = await store.importAll([incoming]);
+
+      expect(result.savedCount, 1);
+      final item = (await store.current()).single;
+      expect(item.id, 'id-1');
+      expect(item.id, isNot(incoming.id));
+      expect(item.meaningLanguageId, 'ur');
+      expect(item.savedAt, incoming.savedAt);
+      expect(item.scanId, 'scan-src');
+      expect(item.text, phrase.text);
+    });
+
+    test('importAll merges and skips duplicates', () async {
+      await store.save(phrase, meaningLanguageId: 'en');
+      final duplicate = SavedHighlight(
+        id: 'source-dup',
+        highlight: phrase,
+        meaningLanguageId: 'en',
+        savedAt: DateTime.utc(2026, 1, 1),
+      );
+      final extra = SavedHighlight(
+        id: 'source-new',
+        highlight: other,
+        meaningLanguageId: 'en',
+        savedAt: DateTime.utc(2026, 2, 2),
+      );
+
+      final result = await store.importAll([duplicate, extra, extra]);
+
+      expect(result.savedCount, 1);
+      expect(await store.current(), hasLength(2));
+    });
+
     test('delete removes the item', () async {
       await store.save(phrase, meaningLanguageId: 'en');
       final id = (await store.current()).single.id;
@@ -313,6 +355,24 @@ void main() {
       expect(await hybrid.current(), hasLength(1));
     });
 
+    test('importAll writes new ids to cache and remote', () async {
+      final incoming = SavedHighlight(
+        id: 'phone-a-1',
+        highlight: other,
+        meaningLanguageId: 'ur',
+        savedAt: DateTime.utc(2026, 4, 4, 4, 4),
+      );
+
+      final result = await store.importAll([incoming]);
+
+      expect(result.savedCount, 1);
+      final local = (await store.current()).single;
+      expect(local.id, 'local-1');
+      expect(local.meaningLanguageId, 'ur');
+      expect(local.savedAt, incoming.savedAt);
+      expect((await remote.current()).single.id, 'local-1');
+    });
+
     test('dedups across saveAll using phrase text and language', () async {
       final first = await store.save(phrase, meaningLanguageId: 'en');
       final all = await store.saveAll([phrase, other], meaningLanguageId: 'en');
@@ -533,6 +593,13 @@ class _SilentRemote implements SavedHighlightsStore {
   }
 
   @override
+  Future<SavedHighlightsWriteResult> importAll(
+    List<SavedHighlight> items,
+  ) async {
+    throw UnsupportedError('use put');
+  }
+
+  @override
   Future<void> delete(String id) async {
     uploaded.removeWhere((item) => item.id == id);
   }
@@ -590,6 +657,13 @@ class _FailThenSucceedStore implements SavedHighlightsStore {
   }
 
   @override
+  Future<SavedHighlightsWriteResult> importAll(
+    List<SavedHighlight> items,
+  ) async {
+    throw UnsupportedError('use put');
+  }
+
+  @override
   Future<void> delete(String id) async {}
 
   @override
@@ -630,6 +704,13 @@ class _ThrowingSavedHighlightsStore implements SavedHighlightsStore {
     required String meaningLanguageId,
     String? scanId,
   }) async {
+    throw StateError('offline');
+  }
+
+  @override
+  Future<SavedHighlightsWriteResult> importAll(
+    List<SavedHighlight> items,
+  ) async {
     throw StateError('offline');
   }
 

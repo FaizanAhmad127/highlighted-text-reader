@@ -92,6 +92,23 @@ class AppAnalytics {
     return _logEvent('saved_deleted', {});
   }
 
+  static Future<void> logHighlightTransferCreated({required int count}) {
+    return _logEvent('highlight_transfer_created', {'count': count});
+  }
+
+  static Future<void> logHighlightTransferImported({
+    required int importedCount,
+    required int skippedCount,
+  }) {
+    return _logEvent(
+      'highlight_transfer_imported',
+      {
+        'imported_count': importedCount,
+        'skipped_count': skippedCount,
+      },
+    );
+  }
+
   static Future<void> logConnectivityChanged({required bool offline}) {
     return _logEvent(
       'connectivity_changed',
