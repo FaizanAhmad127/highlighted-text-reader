@@ -9,8 +9,11 @@ class UIHelpers {
     int durationSeconds = AppConstants.snackbarDurationSeconds,
     Color? backgroundColor,
     IconData icon = Icons.info,
+    String? actionLabel,
+    VoidCallback? onAction,
   }) {
     final theme = Theme.of(context);
+    final hasAction = actionLabel != null && onAction != null;
     final snackBar = SnackBar(
       duration: Duration(seconds: durationSeconds),
       content: Row(
@@ -23,12 +26,20 @@ class UIHelpers {
               style: TextStyle(color: theme.colorScheme.onPrimary),
             ),
           ),
+          if (hasAction)
+            TextButton(
+              onPressed: onAction,
+              child: Text(
+                actionLabel,
+                style: TextStyle(color: theme.colorScheme.onPrimary),
+              ),
+            ),
         ],
       ),
       backgroundColor: backgroundColor ?? theme.colorScheme.primary,
       behavior: SnackBarBehavior.fixed,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.zero,
       ),
     );
 

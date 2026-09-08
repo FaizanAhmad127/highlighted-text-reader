@@ -31,10 +31,21 @@ class HighlightScanErrors {
   static const unavailable =
       'Scanning is temporarily unavailable. Please try again later.';
   static const region = 'Scanning is not available in your region yet.';
+  static const unreadable =
+      'We could not read this photo. Try a clear shot of one page with highlighted text.';
   static const generic = 'Could not read the page. Please try again.';
 
   static String userMessage(Object error) {
     if (error is TimeoutException) return timedOut;
+    if (_contains(error, const [
+      'unhandled format',
+      'content: {}',
+      'blocked',
+      'safety',
+      'no candidates',
+    ])) {
+      return unreadable;
+    }
     if (error is QuotaExceeded ||
         _contains(error, const ['quota', 'resource_exhausted', 'rate limit'])) {
       return quota;

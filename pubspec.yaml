@@ -23,6 +23,7 @@ dependencies:
     introduction_screen: ^4.0.0
     mobile_scanner: ^7.4.0
     package_rename: ^1.8.0
+    permission_handler: ^13.0.2
     qr_flutter: ^4.1.0
     shared_preferences: ^2.5.3
     url_launcher: ^6.3.2

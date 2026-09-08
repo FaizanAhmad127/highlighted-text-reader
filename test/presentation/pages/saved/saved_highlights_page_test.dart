@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:highlighted_text_reader/core/utils/camera_permission.dart';
 import 'package:highlighted_text_reader/data/services/highlight_transfer_service.dart';
 import 'package:highlighted_text_reader/data/services/saved_highlights_store.dart';
 import 'package:highlighted_text_reader/data/services/swipe_delete_hint_store.dart';
@@ -46,6 +47,8 @@ void main() {
     Future<bool> Function()? hasConnection,
     bool Function()? isSignedIn,
     Future<String?> Function(BuildContext context)? scanQr,
+    Future<bool> Function()? requestCameraPermission,
+    Future<void> Function()? openAppSettings,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -58,6 +61,8 @@ void main() {
           hasConnection: hasConnection ?? () async => true,
           isSignedIn: isSignedIn ?? () => true,
           scanQr: scanQr,
+          requestCameraPermission: requestCameraPermission ?? () async => true,
+          openAppSettings: openAppSettings,
         ),
       ),
     );
@@ -150,7 +155,8 @@ void main() {
     expect(find.byTooltip('Clear search'), findsNothing);
     expect(find.text('serendipity'), findsOneWidget);
     expect(find.text('eloquent'), findsOneWidget);
-    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '');
+    expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text, '');
   });
 
   testWidgets('date and language filters narrow the list', (tester) async {
@@ -220,6 +226,96 @@ void main() {
     expect(find.widgetWithText(FilterChip, 'Urdu'), findsOneWidget);
     expect(find.widgetWithText(FilterChip, 'English'), findsNothing);
     expect(find.widgetWithText(FilterChip, 'Arabic'), findsNothing);
+  });
+
+  testWidgets('selected date and language chips stay first in their rows', (
+    tester,
+  ) async {
+    await store.put(
+      SavedHighlight(
+        id: 'en',
+        highlight: serendipity,
+        meaningLanguageId: 'en',
+        savedAt: DateTime(2026, 9, 7, 12, 0),
+      ),
+    );
+    await store.put(
+      SavedHighlight(
+        id: 'ur',
+        highlight: eloquent,
+        meaningLanguageId: 'ur',
+        savedAt: DateTime(2026, 9, 7, 11, 0),
+      ),
+    );
+
+    await pumpPage(tester);
+
+    List<String> chipLabels(Key key) {
+      return tester
+          .widgetList<FilterChip>(
+            find.descendant(
+              of: find.byKey(key),
+              matching: find.byType(FilterChip),
+            ),
+          )
+          .map((chip) => (chip.label as Text).data!)
+          .toList();
+    }
+
+    expect(
+      tester
+          .widget<SingleChildScrollView>(
+              find.byKey(const Key('savedDateFilters')))
+          .scrollDirection,
+      Axis.horizontal,
+    );
+    expect(
+      tester
+          .widget<SingleChildScrollView>(
+            find.byKey(const Key('savedLanguageFilters')),
+          )
+          .scrollDirection,
+      Axis.horizontal,
+    );
+    expect(chipLabels(const Key('savedDateFilters')).first, 'All');
+    expect(chipLabels(const Key('savedLanguageFilters')).first, 'All');
+
+    await tester.tap(find.widgetWithText(FilterChip, 'This month'));
+    await tester.pumpAndSettle();
+    expect(chipLabels(const Key('savedDateFilters')).first, 'This month');
+
+    await tester.tap(find.widgetWithText(FilterChip, 'Urdu'));
+    await tester.pumpAndSettle();
+    expect(chipLabels(const Key('savedLanguageFilters')).first, 'Urdu');
+  });
+
+  testWidgets('fades the overflowing end of a filter row', (tester) async {
+    tester.view.physicalSize = const Size(240, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpPage(tester);
+
+    expect(
+      find.byKey(const ValueKey('endFade:savedDateFilters')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('startFade:savedDateFilters')),
+      findsNothing,
+    );
+
+    await tester.drag(
+      find.byKey(const Key('savedDateFilters')),
+      const Offset(-200, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('startFade:savedDateFilters')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('custom date chip filters to the picked day', (tester) async {
@@ -331,7 +427,8 @@ void main() {
     expect(find.text('No saved highlights yet'), findsNothing);
   });
 
-  testWidgets('disables Share via QR when the library is empty', (tester) async {
+  testWidgets('disables Share via QR when the library is empty',
+      (tester) async {
     await pumpPage(tester);
     await tester.tap(find.byTooltip('Transfer highlights'));
     await tester.pumpAndSettle();
@@ -358,7 +455,6 @@ void main() {
       store: MemoryHighlightTransferStore(),
       currentUid: () => 'uid-a',
       clock: () => DateTime.utc(2026, 9, 7, 16),
-      idGenerator: () => 'Abcdefghij0123456789-_',
     );
 
     await pumpPage(tester, transferService: transfers);
@@ -371,12 +467,12 @@ void main() {
     expect(find.textContaining('Valid for 30 minutes'), findsOneWidget);
   });
 
-  testWidgets('Import via QR merges highlights from a transfer', (tester) async {
+  testWidgets('Import via QR merges highlights from a transfer',
+      (tester) async {
     final transfers = HighlightTransferService(
       store: MemoryHighlightTransferStore(),
       currentUid: () => 'uid-a',
       clock: () => DateTime.utc(2026, 9, 7, 16),
-      idGenerator: () => 'Abcdefghij0123456789-_',
     );
     await transfers.create([
       SavedHighlight(
@@ -390,7 +486,7 @@ void main() {
     await pumpPage(
       tester,
       transferService: transfers,
-      scanQr: (_) async => 'htr1:Abcdefghij0123456789-_',
+      scanQr: (_) async => 'htr1:uid-a',
     );
     await tester.tap(find.byTooltip('Transfer highlights'));
     await tester.pumpAndSettle();
@@ -401,4 +497,114 @@ void main() {
     expect(await store.current(), hasLength(1));
     expect((await store.current()).single.text, 'eloquent');
   });
+
+  testWidgets('denied camera permission blocks QR import and opens settings', (
+    tester,
+  ) async {
+    var openedSettings = 0;
+    var scanned = 0;
+    await pumpPage(
+      tester,
+      requestCameraPermission: () async => false,
+      openAppSettings: () async => openedSettings++,
+      scanQr: (_) async {
+        scanned++;
+        return null;
+      },
+    );
+
+    await tester.tap(find.byTooltip('Transfer highlights'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Import via QR'));
+    await tester.pumpAndSettle();
+
+    expect(scanned, 0);
+    expect(find.text(CameraPermission.qrMessage), findsOneWidget);
+    await tester.tap(find.text(CameraPermission.settingsAction));
+    await tester.pump();
+    expect(openedSettings, 1);
+  });
+
+  testWidgets(
+    'landscape scroll hides search and filters until the app bar, then scrolls cards',
+    (tester) async {
+      tester.view.physicalSize = const Size(844, 390);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      for (var i = 0; i < 8; i++) {
+        await store.put(
+          SavedHighlight(
+            id: '$i',
+            highlight: Highlight(
+              text: 'saved phrase $i',
+              literal: 'lit $i',
+              contextual: 'ctx $i',
+              color: '0xFFE8C547',
+            ),
+            meaningLanguageId: 'en',
+            savedAt: DateTime(2026, 9, 7, 15, i),
+          ),
+        );
+      }
+
+      await pumpPage(tester);
+
+      expect(find.byType(TextField).hitTestable(), findsOneWidget);
+      expect(find.text('All').hitTestable(), findsWidgets);
+      expect(find.text('saved phrase 7').hitTestable(), findsOneWidget);
+
+      await _dragUntilHidden(
+        tester,
+        dragHandle: find.byType(NestedScrollView),
+        hide: find.widgetWithText(FilterChip, 'All'),
+      );
+
+      expect(find.text('Saved highlights').hitTestable(), findsOneWidget);
+      expect(find.byType(TextField).hitTestable(), findsNothing);
+      expect(
+          find.widgetWithText(FilterChip, 'All').hitTestable(), findsNothing);
+      expect(find.textContaining('saved phrase').hitTestable(), findsWidgets);
+
+      final appBarBottom = tester.getRect(find.byType(AppBar)).bottom;
+      final listTop = find.text('Today').hitTestable();
+      expect(listTop, findsOneWidget);
+      expect(tester.getRect(listTop).top, greaterThan(appBarBottom - 1));
+      expect(tester.getRect(listTop).top, lessThanOrEqualTo(appBarBottom + 56));
+
+      await tester.fling(
+        find.byType(NestedScrollView),
+        const Offset(0, -420),
+        2000,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('saved phrase 7').hitTestable(), findsNothing);
+      expect(find.textContaining('saved phrase').hitTestable(), findsWidgets);
+
+      await tester.fling(
+        find.byType(NestedScrollView),
+        const Offset(0, 900),
+        3000,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TextField).hitTestable(), findsOneWidget);
+      expect(
+          find.widgetWithText(FilterChip, 'All').hitTestable(), findsWidgets);
+    },
+  );
+}
+
+Future<void> _dragUntilHidden(
+  WidgetTester tester, {
+  required Finder dragHandle,
+  required Finder hide,
+}) async {
+  for (var i = 0; i < 24; i++) {
+    if (hide.hitTestable().evaluate().isEmpty) return;
+    await tester.drag(dragHandle, const Offset(0, -48));
+    await tester.pumpAndSettle();
+  }
 }

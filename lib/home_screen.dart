@@ -10,6 +10,7 @@ import 'core/constants/app_constants.dart';
 import 'core/firebase/app_analytics.dart';
 import 'core/firebase/app_crashlytics.dart';
 import 'core/firebase/firebase_bootstrap.dart';
+import 'core/utils/camera_permission.dart';
 import 'core/utils/connectivity_helper.dart';
 import 'core/utils/ui_helpers.dart';
 import 'data/services/firestore_scan_limits_store.dart';
@@ -28,6 +29,7 @@ import 'presentation/widgets/highlight/expandable_highlight_card.dart';
 import 'presentation/widgets/home/extra_quota_dialog.dart';
 import 'presentation/widgets/home/image_capture_section.dart';
 import 'presentation/widgets/home/meaning_language_sheet.dart';
+import 'presentation/widgets/layout/collapsing_header_scroll_view.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -38,6 +40,8 @@ class HomeScreen extends StatefulWidget {
     @visibleForTesting this.debugScanId,
     @visibleForTesting this.debugImage,
     @visibleForTesting this.debugQuotaReady,
+    @visibleForTesting this.requestCameraPermission,
+    @visibleForTesting this.openAppSettings,
   });
 
   final SavedHighlightsStore? savedHighlightsStore;
@@ -46,6 +50,8 @@ class HomeScreen extends StatefulWidget {
   final String? debugScanId;
   final File? debugImage;
   final bool? debugQuotaReady;
+  final Future<bool> Function()? requestCameraPermission;
+  final Future<void> Function()? openAppSettings;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -420,6 +426,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    if (source == ImageSource.camera && !await _ensureCameraPermission()) {
+      return;
+    }
+
     if (!await _ensureCanScan()) return;
 
     final sourceName = source == ImageSource.camera ? 'camera' : 'gallery';
@@ -446,6 +456,10 @@ class _HomeScreenState extends State<HomeScreen> {
       await AppCrashlytics.recordNonFatal(e, st, reason: 'image_pick');
       if (!mounted) return;
       setState(() => _status = null);
+      if (source == ImageSource.camera && CameraPermission.isDeniedError(e)) {
+        _showCameraDeniedSnackbar();
+        return;
+      }
       UIHelpers.showSnackbar(
         context,
         'Could not open the camera or gallery. Try again.',
@@ -629,6 +643,26 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<bool> _ensureCameraPermission() async {
+    final request = widget.requestCameraPermission ?? CameraPermission.request;
+    final granted = await request();
+    if (granted) return true;
+    if (!mounted) return false;
+    _showCameraDeniedSnackbar();
+    return false;
+  }
+
+  void _showCameraDeniedSnackbar() {
+    UIHelpers.showSnackbar(
+      context,
+      CameraPermission.photoMessage,
+      actionLabel: CameraPermission.settingsAction,
+      onAction: () {
+        unawaited((widget.openAppSettings ?? CameraPermission.openSettings)());
+      },
+    );
+  }
+
   Future<bool> _ensureCanScan() async {
     final decision = await _rateLimiter.check();
     if (decision.allowed) return true;
@@ -730,123 +764,130 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
+      body: found && !isFetchingMeaning
+          ? CollapsingHeaderScrollView(
+              header: _homeHeader(context, found: true, highlights: highlights),
+              body: _highlightsList(context, highlights),
+            )
+          : Column(
               children: [
-                ImageCaptureSection(
-                  image: _image,
-                  isProcessing: isFetchingMeaning,
-                  status: _status,
-                  offline: _offline,
-                  compact: found,
-                  quotaReady: _quotaReady,
-                  onGallery: () => AppCrashlytics.capture(
-                    _pickImage(ImageSource.gallery),
-                    reason: 'image_pick',
-                  ),
-                  onCamera: () => AppCrashlytics.capture(
-                    _pickImage(ImageSource.camera),
-                    reason: 'image_pick',
-                  ),
-                  scansUsed: _scansUsed,
-                  scansMax: _scansMax,
-                  onRequestExtraQuota: () => AppCrashlytics.capture(
-                    _offerExtraQuota(force: true),
-                    reason: 'quota_request',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (found)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${highlights.length} highlight${highlights.length == 1 ? '' : 's'} — tap for literal and in-context meaning',
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: isFetchingMeaning ||
-                                  highlights.every(_isHighlightSaved)
-                              ? null
-                              : () => AppCrashlytics.capture(
-                                    _saveAll(
-                                      highlights
-                                          .where((h) => !_isHighlightSaved(h))
-                                          .toList(),
-                                    ),
-                                    reason: 'highlight_save_all',
-                                  ),
-                          child: Text(
-                            highlights.isNotEmpty &&
-                                    highlights.every(_isHighlightSaved)
-                                ? 'All saved'
-                                : 'Save all',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (found) const SizedBox(height: 8),
+                _homeHeader(context, found: found, highlights: highlights),
                 Expanded(
                   child: isFetchingMeaning
                       ? UIHelpers.loadingIndicator()
-                      : ListView.separated(
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            0,
-                            16,
-                            MediaQuery.paddingOf(context).bottom + 24,
-                          ),
-                          itemCount: highlights.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 8),
-                          itemBuilder: (context, index) {
-                            final highlight = highlights[index];
-                            return ExpandableHighlightCard(
-                              highlight: highlight,
-                              expanded: _expandedHighlightIndex == index,
-                              saved: _isHighlightSaved(highlight),
-                              onSave: () => AppCrashlytics.capture(
-                                _toggleSave(highlight),
-                                reason: 'highlight_save',
-                              ),
-                              onTap: () {
-                                final expanding =
-                                    _expandedHighlightIndex != index;
-                                setState(() {
-                                  _expandedHighlightIndex =
-                                      _expandedHighlightIndex == index
-                                          ? null
-                                          : index;
-                                });
-                                if (expanding) {
-                                  unawaited(
-                                    AppAnalytics.logHighlightExpanded(
-                                      index: index,
-                                    ),
-                                  );
-                                }
-                              },
-                            );
-                          },
+                      : _highlightsList(context, highlights),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _homeHeader(
+    BuildContext context, {
+    required bool found,
+    required List<Highlight> highlights,
+  }) {
+    return Column(
+      children: [
+        ImageCaptureSection(
+          image: _image,
+          isProcessing: isFetchingMeaning,
+          status: _status,
+          offline: _offline,
+          compact: found,
+          quotaReady: _quotaReady,
+          onGallery: () => AppCrashlytics.capture(
+            _pickImage(ImageSource.gallery),
+            reason: 'image_pick',
+          ),
+          onCamera: () => AppCrashlytics.capture(
+            _pickImage(ImageSource.camera),
+            reason: 'image_pick',
+          ),
+          scansUsed: _scansUsed,
+          scansMax: _scansMax,
+          onRequestExtraQuota: () => AppCrashlytics.capture(
+            _offerExtraQuota(force: true),
+            reason: 'quota_request',
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (found)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${highlights.length} highlight${highlights.length == 1 ? '' : 's'} — tap for literal and in-context meaning',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
+                  ),
+                ),
+                TextButton(
+                  onPressed:
+                      isFetchingMeaning || highlights.every(_isHighlightSaved)
+                          ? null
+                          : () => AppCrashlytics.capture(
+                                _saveAll(
+                                  highlights
+                                      .where((h) => !_isHighlightSaved(h))
+                                      .toList(),
+                                ),
+                                reason: 'highlight_save_all',
+                              ),
+                  child: Text(
+                    highlights.isNotEmpty && highlights.every(_isHighlightSaved)
+                        ? 'All saved'
+                        : 'Save all',
+                  ),
                 ),
               ],
             ),
           ),
-        ],
+        if (found) const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _highlightsList(BuildContext context, List<Highlight> highlights) {
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        MediaQuery.paddingOf(context).bottom + 24,
       ),
+      itemCount: highlights.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final highlight = highlights[index];
+        return ExpandableHighlightCard(
+          highlight: highlight,
+          expanded: _expandedHighlightIndex == index,
+          saved: _isHighlightSaved(highlight),
+          onSave: () => AppCrashlytics.capture(
+            _toggleSave(highlight),
+            reason: 'highlight_save',
+          ),
+          onTap: () {
+            final expanding = _expandedHighlightIndex != index;
+            setState(() {
+              _expandedHighlightIndex =
+                  _expandedHighlightIndex == index ? null : index;
+            });
+            if (expanding) {
+              unawaited(
+                AppAnalytics.logHighlightExpanded(
+                  index: index,
+                ),
+              );
+            }
+          },
+        );
+      },
     );
   }
 }

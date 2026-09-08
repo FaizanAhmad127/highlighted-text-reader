@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/firebase/app_analytics.dart';
 import '../../../core/firebase/app_crashlytics.dart';
+import '../../../core/utils/camera_permission.dart';
 import '../../../core/utils/connectivity_helper.dart';
 import '../../../core/utils/ui_helpers.dart';
 import '../../../data/services/highlight_transfer_service.dart';
@@ -15,6 +16,7 @@ import '../../../data/services/swipe_delete_hint_store.dart';
 import '../../../domain/entities/meaning_language.dart';
 import '../../../domain/entities/saved_highlight.dart';
 import '../../widgets/highlight/expandable_highlight_card.dart';
+import '../../widgets/layout/collapsing_header_scroll_view.dart';
 import 'highlight_qr_scanner_page.dart';
 import 'highlight_transfer_qr_dialog.dart';
 
@@ -29,6 +31,8 @@ class SavedHighlightsPage extends StatefulWidget {
     this.hasConnection,
     this.isSignedIn,
     this.scanQr,
+    this.requestCameraPermission,
+    this.openAppSettings,
   });
 
   final SavedHighlightsStore? store;
@@ -39,6 +43,8 @@ class SavedHighlightsPage extends StatefulWidget {
   final Future<bool> Function()? hasConnection;
   final bool Function()? isSignedIn;
   final Future<String?> Function(BuildContext context)? scanQr;
+  final Future<bool> Function()? requestCameraPermission;
+  final Future<void> Function()? openAppSettings;
 
   @override
   State<SavedHighlightsPage> createState() => _SavedHighlightsPageState();
@@ -129,7 +135,8 @@ class _SavedHighlightsPageState extends State<SavedHighlightsPage> {
         await (widget.hasConnection ?? ConnectivityHelper.hasConnection)();
     if (!online) {
       if (!mounted) return false;
-      UIHelpers.showSnackbar(context, 'Connect to the internet to transfer highlights.');
+      UIHelpers.showSnackbar(
+          context, 'Connect to the internet to transfer highlights.');
       return false;
     }
     return true;
@@ -169,13 +176,35 @@ class _SavedHighlightsPageState extends State<SavedHighlightsPage> {
     }
   }
 
+  Future<bool> _ensureCameraPermission() async {
+    final request = widget.requestCameraPermission ?? CameraPermission.request;
+    final granted = await request();
+    if (granted) return true;
+    if (!mounted) return false;
+    UIHelpers.showSnackbar(
+      context,
+      CameraPermission.qrMessage,
+      actionLabel: CameraPermission.settingsAction,
+      onAction: () {
+        unawaited((widget.openAppSettings ?? CameraPermission.openSettings)());
+      },
+    );
+    return false;
+  }
+
   Future<void> _importViaQr() async {
     if (!await _onlineAndSignedIn()) return;
+    if (!mounted) return;
+    if (!await _ensureCameraPermission()) return;
     if (!mounted) return;
     final raw = widget.scanQr != null
         ? await widget.scanQr!(context)
         : await Navigator.of(context).push<String>(
-            MaterialPageRoute(builder: (_) => const HighlightQrScannerPage()),
+            MaterialPageRoute(
+              builder: (_) => HighlightQrScannerPage(
+                openAppSettings: widget.openAppSettings,
+              ),
+            ),
           );
     if (!mounted || raw == null || raw.isEmpty) return;
     try {
@@ -326,46 +355,53 @@ class _SavedHighlightsPageState extends State<SavedHighlightsPage> {
           ),
         ],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: TextField(
-              controller: _searchController,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: 'Search highlighted phrases',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Clear search',
-                        icon: const Icon(Icons.clear),
-                        onPressed: _clearSearch,
-                      ),
-                border: const OutlineInputBorder(),
-                isDense: true,
-              ),
-              onChanged: (value) => setState(() => _query = value),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+      body: result.items.isEmpty
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final filter in SavedDateFilter.values)
-                  if (filter != SavedDateFilter.custom)
-                    FilterChip(
-                      label: Text(_dateLabel(filter)),
-                      selected: _dateFilter == filter,
-                      onSelected: (_) => setState(() {
-                        _dateFilter = filter;
-                        _customDay = null;
-                      }),
+                _searchAndFilters(languages),
+                Expanded(child: _buildList(theme, result)),
+              ],
+            )
+          : CollapsingHeaderScrollView(
+              header: _searchAndFilters(languages),
+              body: _buildList(theme, result),
+            ),
+    );
+  }
+
+  Widget _searchAndFilters(List<MeaningLanguage> languages) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Search highlighted phrases',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      icon: const Icon(Icons.clear),
+                      onPressed: _clearSearch,
                     ),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (value) => setState(() => _query = value),
+          ),
+        ),
+        _horizontalChipScroller(
+          rowKey: const Key('savedDateFilters'),
+          selectionKey: ValueKey(_dateFilter),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          children: [
+            for (final filter in _dateFiltersWithSelectedFirst())
+              if (filter == SavedDateFilter.custom)
                 FilterChip(
                   avatar: Icon(
                     Icons.calendar_today,
@@ -385,37 +421,42 @@ class _SavedHighlightsPageState extends State<SavedHighlightsPage> {
                     _pickCustomDate(),
                     reason: 'saved_date_picker',
                   ),
+                )
+              else
+                FilterChip(
+                  label: Text(_dateLabel(filter)),
+                  selected: _dateFilter == filter,
+                  onSelected: (_) => setState(() {
+                    _dateFilter = filter;
+                    _customDay = null;
+                  }),
                 ),
-              ],
-            ),
-          ),
-          if (languages.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
+          ],
+        ),
+        if (languages.isNotEmpty)
+          _horizontalChipScroller(
+            rowKey: const Key('savedLanguageFilters'),
+            selectionKey: ValueKey(_languageId),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            children: [
+              for (final language in _languagesWithSelectedFirst(languages))
+                if (language == null)
                   FilterChip(
                     label: const Text('All'),
                     selected: _languageId == null,
                     onSelected: (_) => setState(() => _languageId = null),
+                  )
+                else
+                  FilterChip(
+                    label: Text(language.name),
+                    selected: _languageId == language.id,
+                    onSelected: (_) =>
+                        setState(() => _languageId = language.id),
                   ),
-                  for (final language in languages)
-                    FilterChip(
-                      label: Text(language.name),
-                      selected: _languageId == language.id,
-                      onSelected: (_) => setState(() {
-                        _languageId = language.id;
-                      }),
-                    ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 8),
-          Expanded(child: _buildList(theme, result)),
-        ],
-      ),
+            ],
+          ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 
@@ -467,7 +508,9 @@ class _SavedHighlightsPageState extends State<SavedHighlightsPage> {
     }
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.only(
+        top: 8,
         bottom: MediaQuery.paddingOf(context).bottom + 24,
       ),
       children: children,
@@ -555,6 +598,53 @@ class _SavedHighlightsPageState extends State<SavedHighlightsPage> {
     );
   }
 
+  Widget _horizontalChipScroller({
+    required Key rowKey,
+    required Key selectionKey,
+    required EdgeInsetsGeometry padding,
+    required List<Widget> children,
+  }) {
+    return _FadingHorizontalChipRow(
+      key: selectionKey,
+      rowKey: rowKey,
+      padding: padding,
+      children: children,
+    );
+  }
+
+  List<SavedDateFilter> _dateFiltersWithSelectedFirst() {
+    return _withSelectedFirst(
+      [
+        for (final filter in SavedDateFilter.values)
+          if (filter != SavedDateFilter.custom) filter,
+        SavedDateFilter.custom,
+      ],
+      (filter) => filter == _dateFilter,
+    );
+  }
+
+  List<MeaningLanguage?> _languagesWithSelectedFirst(
+    List<MeaningLanguage> languages,
+  ) {
+    return _withSelectedFirst<MeaningLanguage?>(
+      [null, ...languages],
+      (language) => language?.id == _languageId,
+    );
+  }
+
+  List<T> _withSelectedFirst<T>(
+    List<T> items,
+    bool Function(T item) isSelected,
+  ) {
+    final index = items.indexWhere(isSelected);
+    if (index <= 0) return items;
+    return [
+      items[index],
+      ...items.sublist(0, index),
+      ...items.sublist(index + 1),
+    ];
+  }
+
   String _dateLabel(SavedDateFilter filter) {
     switch (filter) {
       case SavedDateFilter.all:
@@ -568,6 +658,139 @@ class _SavedHighlightsPageState extends State<SavedHighlightsPage> {
       case SavedDateFilter.custom:
         return 'Custom';
     }
+  }
+}
+
+class _FadingHorizontalChipRow extends StatefulWidget {
+  const _FadingHorizontalChipRow({
+    super.key,
+    required this.rowKey,
+    required this.padding,
+    required this.children,
+  });
+
+  final Key rowKey;
+  final EdgeInsetsGeometry padding;
+  final List<Widget> children;
+
+  @override
+  State<_FadingHorizontalChipRow> createState() =>
+      _FadingHorizontalChipRowState();
+}
+
+class _FadingHorizontalChipRowState extends State<_FadingHorizontalChipRow> {
+  final _controller = ScrollController();
+  var _canScrollStart = false;
+  var _canScrollEnd = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_updateFades);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFades());
+  }
+
+  @override
+  void didUpdateWidget(covariant _FadingHorizontalChipRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFades());
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_updateFades)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _updateFades() {
+    if (!_controller.hasClients) return;
+    final position = _controller.position;
+    final canStart = position.pixels > 0.5;
+    final canEnd = position.maxScrollExtent - position.pixels > 0.5;
+    if (canStart == _canScrollStart && canEnd == _canScrollEnd) return;
+    setState(() {
+      _canScrollStart = canStart;
+      _canScrollEnd = canEnd;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fadeColor = Theme.of(context).scaffoldBackgroundColor;
+    return Stack(
+      children: [
+        SingleChildScrollView(
+          key: widget.rowKey,
+          controller: _controller,
+          scrollDirection: Axis.horizontal,
+          padding: widget.padding,
+          child: Row(
+            children: [
+              for (var i = 0; i < widget.children.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                widget.children[i],
+              ],
+            ],
+          ),
+        ),
+        if (_canScrollStart)
+          _ScrollEdgeFade(
+            key: ValueKey('startFade:${_keyName(widget.rowKey)}'),
+            alignment: Alignment.centerLeft,
+            color: fadeColor,
+          ),
+        if (_canScrollEnd)
+          _ScrollEdgeFade(
+            key: ValueKey('endFade:${_keyName(widget.rowKey)}'),
+            alignment: Alignment.centerRight,
+            color: fadeColor,
+          ),
+      ],
+    );
+  }
+
+  String _keyName(Key key) {
+    if (key is ValueKey) return '${key.value}';
+    return key.toString();
+  }
+}
+
+class _ScrollEdgeFade extends StatelessWidget {
+  const _ScrollEdgeFade({
+    super.key,
+    required this.alignment,
+    required this.color,
+  });
+
+  final Alignment alignment;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final fadeRight = alignment == Alignment.centerRight;
+    return Positioned(
+      left: fadeRight ? null : 0,
+      right: fadeRight ? 0 : null,
+      top: 0,
+      bottom: 0,
+      width: 28,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: fadeRight ? Alignment.centerLeft : Alignment.centerRight,
+              end: fadeRight ? Alignment.centerRight : Alignment.centerLeft,
+              colors: [
+                color.withValues(alpha: 0),
+                color,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

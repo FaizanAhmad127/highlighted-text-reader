@@ -10,6 +10,18 @@ import 'package:highlighted_text_reader/domain/entities/highlight.dart';
 import 'package:highlighted_text_reader/domain/entities/meaning_language.dart';
 
 void main() {
+  test('maps empty Gemini content to a try-another-photo message', () {
+    expect(
+      HighlightScanErrors.userMessage(
+        Exception(
+          'Unhandled format for Content: {}\n'
+          'This indicates a problem with the Firebase AI Logic SDK.',
+        ),
+      ),
+      HighlightScanErrors.unreadable,
+    );
+  });
+
   test('maps prepaid billing errors to a paused-scanning message', () {
     expect(
       HighlightScanErrors.userMessage(
