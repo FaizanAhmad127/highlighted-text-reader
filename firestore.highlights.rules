@@ -34,12 +34,18 @@ service cloud.firestore {
     // Ownership is the userId path segment. Clients may CRUD their own items.
     //
     // Collection: highlight_transfers/{transferId}
+    // Document ID: exporter Auth uid. One transfer per user; later shares update it.
     // Fields:
-    //   - createdBy: string (auth uid of the exporter)
-    //   - createdAt, expiresAt: timestamp (TTL is 30 minutes)
+    //   - createdBy: string (auth uid of the exporter; immutable after create)
+    //   - createdAt, expiresAt: timestamp (app TTL is 30 minutes; rules allow 35m for clock skew)
     //   - itemCount: int (1..200)
+    //   - itemIds: list of item document ids (same length as itemCount)
     // Subcollection: items/{itemId} uses the saved-highlight schema.
+    // Owner is the path uid. Expiry lives only on the parent document.
+    // Item list is owner-only so rules do not get() the parent per item.
+    // Importers get the parent (expiry check) then get items by itemIds.
     // Get by transferId only. Do not list the transfers collection.
+    // Owner get is allowed by path uid even when the document is missing.
     //
     // ===============================================================
     // Helper Functions
@@ -219,41 +225,75 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    function isValidTransferCreate() {
+    function isValidTransferWrite() {
       return isAuthenticated() &&
-        request.resource.data.createdBy == request.auth.uid &&
-        hasRequiredFields(['createdBy', 'createdAt', 'expiresAt', 'itemCount']) &&
-        hasOnlyAllowedFields(['createdBy', 'createdAt', 'expiresAt', 'itemCount']) &&
+        hasRequiredFields([
+          'createdBy',
+          'createdAt',
+          'expiresAt',
+          'itemCount',
+          'itemIds'
+        ]) &&
+        hasOnlyAllowedFields([
+          'createdBy',
+          'createdAt',
+          'expiresAt',
+          'itemCount',
+          'itemIds'
+        ]) &&
         request.resource.data.createdBy is string &&
         request.resource.data.createdAt is timestamp &&
         request.resource.data.expiresAt is timestamp &&
         request.resource.data.expiresAt > request.time &&
-        request.resource.data.expiresAt <= request.time + duration.value(30, 'm') &&
+        request.resource.data.expiresAt <= request.time + duration.value(35, 'm') &&
         request.resource.data.itemCount is int &&
         request.resource.data.itemCount >= 1 &&
-        request.resource.data.itemCount <= 200;
+        request.resource.data.itemCount <= 200 &&
+        request.resource.data.itemIds is list &&
+        request.resource.data.itemIds.size() == request.resource.data.itemCount;
+    }
+
+    function isValidTransferCreate() {
+      return isValidTransferWrite() &&
+        request.resource.data.createdBy == request.auth.uid;
+    }
+
+    function isValidTransferUpdate() {
+      return isValidTransferWrite() &&
+        resource.data.createdBy == request.auth.uid &&
+        request.resource.data.createdBy == resource.data.createdBy;
     }
 
     function transferIsUnexpired() {
-      return resource.data.expiresAt is timestamp &&
+      return resource != null &&
+        resource.data.expiresAt is timestamp &&
         resource.data.expiresAt > request.time;
     }
 
+    function transferParentUnexpired(transferId) {
+      return exists(/databases/$(database)/documents/highlight_transfers/$(transferId)) &&
+        get(/databases/$(database)/documents/highlight_transfers/$(transferId))
+          .data.expiresAt is timestamp &&
+        get(/databases/$(database)/documents/highlight_transfers/$(transferId))
+          .data.expiresAt > request.time;
+    }
+
     match /highlight_transfers/{transferId} {
-      allow get: if isAuthenticated() && transferIsUnexpired();
+      allow get: if isAuthenticated() &&
+        (request.auth.uid == transferId || transferIsUnexpired());
       allow list: if false;
-      allow create: if isValidTransferCreate();
-      allow update, delete: if false;
+      allow create: if request.auth.uid == transferId && isValidTransferCreate();
+      allow update: if isValidTransferUpdate();
+      allow delete: if false;
 
       match /items/{itemId} {
-        allow get, list: if isAuthenticated() &&
-          get(/databases/$(database)/documents/highlight_transfers/$(transferId))
-            .data.expiresAt > request.time;
-        allow create: if isAuthenticated() &&
-          get(/databases/$(database)/documents/highlight_transfers/$(transferId))
-            .data.createdBy == request.auth.uid &&
+        allow list: if isAuthenticated() && request.auth.uid == transferId;
+        allow get: if isAuthenticated() &&
+          (request.auth.uid == transferId || transferParentUnexpired(transferId));
+        allow create, update: if isAuthenticated() &&
+          request.auth.uid == transferId &&
           isValidSavedHighlight(request.resource.data);
-        allow update, delete: if false;
+        allow delete: if isAuthenticated() && request.auth.uid == transferId;
       }
     }
   }

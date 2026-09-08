@@ -3,6 +3,8 @@ import 'dart:math';
 class HighlightTransferPayload {
   static const prefix = 'htr1:';
   static const idLength = 22;
+  static const minIdLength = 1;
+  static const maxIdLength = 128;
   static const maxItems = 200;
   static const ttl = Duration(minutes: 30);
   static const _alphabet =
@@ -27,7 +29,7 @@ class HighlightTransferPayload {
   }
 
   static bool _isValidId(String id) {
-    if (id.length != idLength) return false;
+    if (id.length < minIdLength || id.length > maxIdLength) return false;
     return id.split('').every(_alphabet.contains);
   }
 }

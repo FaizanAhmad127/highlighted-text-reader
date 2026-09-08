@@ -13,10 +13,13 @@ void main() {
     expect(HighlightTransferPayload.tryParse('  $payload  '), id);
   });
 
+  test('accepts an Auth uid-shaped transfer id', () {
+    expect(HighlightTransferPayload.tryParse('htr1:uid-a'), 'uid-a');
+  });
+
   test('rejects payloads that are not this app’s transfer format', () {
     expect(HighlightTransferPayload.tryParse(''), isNull);
     expect(HighlightTransferPayload.tryParse('https://example.com'), isNull);
-    expect(HighlightTransferPayload.tryParse('htr1:short'), isNull);
     expect(
       HighlightTransferPayload.tryParse('htr1:Abcdefghij0123456789!@'),
       isNull,

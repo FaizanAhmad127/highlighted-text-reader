@@ -60,17 +60,14 @@ class HighlightTransferService {
     HighlightTransferStore? store,
     String? Function()? currentUid,
     DateTime Function()? clock,
-    String Function()? idGenerator,
   })  : _store = store ?? FirestoreHighlightTransferStore(),
         _currentUid =
             currentUid ?? (() => FirebaseAuth.instance.currentUser?.uid),
-        _clock = clock ?? DateTime.now,
-        _idGenerator = idGenerator ?? HighlightTransferPayload.newId;
+        _clock = clock ?? DateTime.now;
 
   final HighlightTransferStore _store;
   final String? Function() _currentUid;
   final DateTime Function() _clock;
-  final String Function() _idGenerator;
 
   Future<HighlightTransferSession> create(List<SavedHighlight> items) async {
     if (items.isEmpty) {
@@ -85,7 +82,7 @@ class HighlightTransferService {
     }
     final now = _clock().toUtc();
     final record = HighlightTransferRecord(
-      id: _idGenerator(),
+      id: uid,
       createdBy: uid,
       createdAt: now,
       expiresAt: now.add(HighlightTransferPayload.ttl),
@@ -122,6 +119,8 @@ class HighlightTransferService {
 class MemoryHighlightTransferStore implements HighlightTransferStore {
   final Map<String, HighlightTransferRecord> _records = {};
 
+  int get recordCount => _records.length;
+
   @override
   Future<void> write(HighlightTransferRecord record) async {
     _records[record.id] = record;
@@ -150,13 +149,22 @@ class FirestoreHighlightTransferStore implements HighlightTransferStore {
   @override
   Future<void> write(HighlightTransferRecord record) async {
     final doc = _db.collection(collectionId).doc(record.id);
+    final previousIds = await _previousItemIds(doc);
+    final nextIds = [for (final item in record.items) item.id];
+    final nextIdSet = nextIds.toSet();
     await doc.set({
       'createdBy': record.createdBy,
       'createdAt': Timestamp.fromDate(record.createdAt.toUtc()),
       'expiresAt': Timestamp.fromDate(record.expiresAt.toUtc()),
       'itemCount': record.itemCount,
+      'itemIds': nextIds,
     });
     final batch = _db.batch();
+    for (final id in previousIds) {
+      if (!nextIdSet.contains(id)) {
+        batch.delete(doc.collection(itemsCollectionId).doc(id));
+      }
+    }
     for (final item in record.items) {
       final fields = Map<String, Object>.from(
         FirestoreSavedHighlightsStore.documentFields(item),
@@ -167,20 +175,35 @@ class FirestoreHighlightTransferStore implements HighlightTransferStore {
     await batch.commit();
   }
 
+  Future<Set<String>> _previousItemIds(
+    DocumentReference<Map<String, dynamic>> doc,
+  ) async {
+    final existing = await doc.collection(itemsCollectionId).get();
+    return {for (final item in existing.docs) item.id};
+  }
+
   @override
   Future<HighlightTransferRecord?> read(String id) async {
     final doc = await _db.collection(collectionId).doc(id).get();
     if (!doc.exists) return null;
     final data = doc.data() ?? {};
-    final itemsSnap = await doc.reference.collection(itemsCollectionId).get();
+    final itemIds = [
+      for (final id in data['itemIds'] as List? ?? const [])
+        if (id is String && id.isNotEmpty) id,
+    ];
+    final items = <SavedHighlight>[];
+    for (final itemId in itemIds) {
+      final itemDoc =
+          await doc.reference.collection(itemsCollectionId).doc(itemId).get();
+      if (!itemDoc.exists) continue;
+      items.add(_itemFromData(itemDoc.id, itemDoc.data() ?? {}));
+    }
     return HighlightTransferRecord(
       id: doc.id,
       createdBy: data['createdBy'] as String? ?? '',
       createdAt: _parseTime(data['createdAt']),
       expiresAt: _parseTime(data['expiresAt']),
-      items: itemsSnap.docs
-          .map((item) => _itemFromData(item.id, item.data()))
-          .toList(),
+      items: items,
     );
   }
 

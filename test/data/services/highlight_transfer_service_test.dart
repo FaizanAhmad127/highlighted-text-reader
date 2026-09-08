@@ -30,7 +30,6 @@ void main() {
       store: store,
       currentUid: () => 'uid-a',
       clock: () => now,
-      idGenerator: () => 'Abcdefghij0123456789-_',
     );
   });
 
@@ -38,7 +37,7 @@ void main() {
     final session = await service.create([item]);
 
     expect(session.itemCount, 1);
-    expect(session.qrPayload, 'htr1:Abcdefghij0123456789-_');
+    expect(session.qrPayload, 'htr1:uid-a');
     expect(session.expiresAt, now.add(HighlightTransferPayload.ttl));
 
     final record = await store.read(session.id);
@@ -83,7 +82,7 @@ void main() {
   test('fetchFromQr returns items for an unexpired transfer', () async {
     await service.create([item]);
 
-    final items = await service.fetchFromQr('htr1:Abcdefghij0123456789-_');
+    final items = await service.fetchFromQr('htr1:uid-a');
 
     expect(items, hasLength(1));
     expect(items.single.meaningLanguageId, 'en');
@@ -115,7 +114,7 @@ void main() {
     await service.create([item]);
     now = now.add(HighlightTransferPayload.ttl);
     expect(
-      () => service.fetchFromQr('htr1:Abcdefghij0123456789-_'),
+      () => service.fetchFromQr('htr1:uid-a'),
       throwsA(
         isA<HighlightTransferException>().having(
           (e) => e.error,
@@ -124,5 +123,25 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('second create reuses the uid document and replaces items', () async {
+    await service.create([item]);
+
+    final replacement = SavedHighlight(
+      id: 'src-2',
+      highlight: phrase,
+      meaningLanguageId: 'es',
+      savedAt: DateTime.utc(2026, 9, 2, 12),
+    );
+    final session = await service.create([replacement]);
+
+    expect(session.qrPayload, 'htr1:uid-a');
+    expect(store.recordCount, 1);
+    final record = await store.read('uid-a');
+    expect(record, isNotNull);
+    expect(record!.items, hasLength(1));
+    expect(record.items.single.id, 'src-2');
+    expect(record.items.single.meaningLanguageId, 'es');
   });
 }
