@@ -74,6 +74,8 @@
 	<string>This app uses the camera to photograph book pages and to scan QR codes when importing saved highlights.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app requires photo library access to photos to process and give you the best results on your highlighted text.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>AppCheckDebugToken</key>
 	<string>$(APP_CHECK_DEBUG_TOKEN)</string>
 
