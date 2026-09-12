@@ -1,6 +1,7 @@
+// import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-
+// import 'package:flutter_skill/flutter_skill.dart';
 import 'core/constants/app_constants.dart';
 import 'core/firebase/firebase_bootstrap.dart';
 import 'data/services/onboarding_store.dart';
@@ -13,6 +14,7 @@ Future<void> main() async {
   await FirebaseBootstrap.initialize();
   final onboardingStore = OnboardingStore();
   final onboardingCompleted = await onboardingStore.read();
+  // if (kDebugMode) FlutterSkillBinding.ensureInitialized();
   runApp(MyApp(
     onboardingCompleted: onboardingCompleted,
     onboardingStore: onboardingStore,
